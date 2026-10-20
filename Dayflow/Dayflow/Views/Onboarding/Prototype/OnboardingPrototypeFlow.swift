@@ -3,11 +3,9 @@
 //  Dayflow
 //
 
-import AVFoundation
 import SwiftUI
 
 enum OnboardingPrototypeStep: Int, CaseIterable, Identifiable {
-  case introVideo
   case roleSelection
   case preferences
   case chooseProvider
@@ -17,8 +15,6 @@ enum OnboardingPrototypeStep: Int, CaseIterable, Identifiable {
 
   var analyticsName: String {
     switch self {
-    case .introVideo:
-      return "intro_video"
     case .roleSelection:
       return "role_selection"
     case .preferences:
@@ -49,7 +45,7 @@ struct OnboardingPrototypeFlow: View {
   @State private var hasTrackedCompletion = false
 
   init(
-    initialStep: OnboardingPrototypeStep = .introVideo,
+    initialStep: OnboardingPrototypeStep = .roleSelection,
     flowVariant: String = "prototype_v1",
     entryPoint: String = "preview"
   ) {
@@ -64,29 +60,6 @@ struct OnboardingPrototypeFlow: View {
         .ignoresSafeArea()
 
       switch currentStep {
-      case .introVideo:
-        OnboardingPrototypeVideoIntroStep(
-          videoName: "DayflowOnboarding",
-          onPlaybackStarted: {
-            OnboardingPrototypeAnalytics.trackVideoStarted(
-              step: .introVideo,
-              flowID: flowID,
-              flowVariant: flowVariant,
-              assetName: "DayflowOnboarding.mp4"
-            )
-          },
-          onPlaybackCompleted: { reason in
-            OnboardingPrototypeAnalytics.trackVideoCompleted(
-              step: .introVideo,
-              flowID: flowID,
-              flowVariant: flowVariant,
-              assetName: "DayflowOnboarding.mp4",
-              completionReason: reason
-            )
-            advance(from: .introVideo, method: "video_\(reason)")
-          }
-        )
-
       case .roleSelection:
         OnboardingPrototypeRoleSelectionStep(
           onContinue: { selectedRole in
@@ -137,9 +110,6 @@ struct OnboardingPrototypeFlow: View {
 
       case .placeholder:
         OnboardingPrototypePlaceholderStep(
-          onReplayVideo: {
-            currentStep = .introVideo
-          },
           onFinish: {
             advance(from: .placeholder, method: "finish_button")
           }
@@ -202,7 +172,6 @@ struct OnboardingPrototypeFlow: View {
 // MARK: - Placeholder Step
 
 private struct OnboardingPrototypePlaceholderStep: View {
-  let onReplayVideo: () -> Void
   let onFinish: () -> Void
 
   var body: some View {
@@ -213,7 +182,7 @@ private struct OnboardingPrototypePlaceholderStep: View {
           .foregroundColor(.black.opacity(0.9))
 
         Text(
-          "The intro video, role-selection screen, and preferences screen are now wired up. We can keep replacing the remaining placeholders step by step without touching production onboarding yet."
+          "The role-selection screen and preferences screen are now wired up. We can keep replacing the remaining placeholders step by step without touching production onboarding yet."
         )
         .font(.custom("Figtree", size: 17))
         .foregroundColor(.black.opacity(0.65))
@@ -222,24 +191,6 @@ private struct OnboardingPrototypePlaceholderStep: View {
       }
 
       HStack(spacing: 16) {
-        DayflowSurfaceButton(
-          action: onReplayVideo,
-          content: {
-            Text("Replay video")
-              .font(.custom("Figtree", size: 15))
-              .fontWeight(.semibold)
-          },
-          background: .white,
-          foreground: Color(red: 0.25, green: 0.17, blue: 0),
-          borderColor: Color(hex: "B6B6B6"),
-          cornerRadius: 200,
-          horizontalPadding: 12,
-          verticalPadding: 0,
-          minWidth: 170,
-          fixedHeight: 36,
-          showShadow: false
-        )
-
         DayflowSurfaceButton(
           action: onFinish,
           content: {
@@ -306,32 +257,6 @@ enum OnboardingPrototypeAnalytics {
     props["advance_method"] = advanceMethod
     extraProps.forEach { props[$0.key] = $0.value }
     capture("onboarding_step_completed", props)
-  }
-
-  static func trackVideoStarted(
-    step: OnboardingPrototypeStep,
-    flowID: String,
-    flowVariant: String,
-    assetName: String
-  ) {
-    var props = stepProps(step: step, flowID: flowID, flowVariant: flowVariant)
-    props["asset_name"] = assetName
-    props["is_muted"] = true
-    props["auto_advance"] = true
-    capture("onboarding_video_started", props)
-  }
-
-  static func trackVideoCompleted(
-    step: OnboardingPrototypeStep,
-    flowID: String,
-    flowVariant: String,
-    assetName: String,
-    completionReason: String
-  ) {
-    var props = stepProps(step: step, flowID: flowID, flowVariant: flowVariant)
-    props["asset_name"] = assetName
-    props["completion_reason"] = completionReason
-    capture("onboarding_video_completed", props)
   }
 
   static func trackFlowCompleted(
