@@ -34,6 +34,7 @@ jobs:
             -destination 'platform=macOS' \
             -clonedSourcePackagesDirPath .spm \
             -resultBundlePath TestResults.xcresult \
+            -only-testing:DayflowTests \
             -quiet \
             CODE_SIGNING_ALLOWED=NO
       - name: Upload test results
