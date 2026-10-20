@@ -140,7 +140,6 @@ Dayflow is licensed under the MIT License.
 
 <p align="center">
   <a href="https://www.dayflow.so/">dayflow.so</a> ·
-  <a href="https://www.dayflow.so/pricing/">Pricing</a> ·
   <a href="https://www.dayflow.so/privacy/">Privacy</a> ·
   <a href="https://www.dayflow.so/blog/">Guides</a>
 </p>

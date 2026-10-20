@@ -31,7 +31,6 @@ final class LLMProviderRoutingTests: XCTestCase {
 
     XCTAssertEqual(migration.routing, LLMProviderRouting(primary: .gemini))
     XCTAssertTrue(migration.sharedPromptOverrides.isEmpty)
-    XCTAssertNil(migration.dayflowEndpointOverride)
     XCTAssertNil(migration.localEndpointOverride)
     XCTAssertNil(defaults.object(forKey: LegacyLLMProviderMigration.Key.providerType))
     XCTAssertNil(defaults.object(forKey: LegacyLLMProviderMigration.Key.selectedProvider))
@@ -44,7 +43,8 @@ final class LLMProviderRoutingTests: XCTestCase {
   func testSelectedProviderExactAndLegacyIDsMapToExactProviderIDs() throws {
     let defaults = try makeDefaults()
     let mappings: [(String, LLMProviderID)] = [
-      ("dayflow", .dayflow),
+      // The removed hosted provider falls back to the default.
+      ("dayflow", .gemini),
       ("gemini", .gemini),
       ("chatgpt", .chatGPT),
       ("claude", .claude),
@@ -125,25 +125,17 @@ final class LLMProviderRoutingTests: XCTestCase {
     XCTAssertEqual(migration.routing.primary, .claude)
   }
 
-  func testLegacyEnumMapsDayflowEndpointLocalAndGemini() throws {
+  func testLegacyEnumMapsLocalAndGemini() throws {
     let defaults = try makeDefaults()
 
-    try setLegacyProviderType(
-      .dayflowBackend(endpoint: "  https://example.com/api  "), in: defaults)
-    var migration = LegacyLLMProviderMigration.migrate(from: defaults)
-    XCTAssertEqual(migration.routing.primary, .dayflow)
-    XCTAssertEqual(migration.dayflowEndpointOverride, "https://example.com/api")
-
     try setLegacyProviderType(.ollamaLocal(endpoint: "http://localhost:9999"), in: defaults)
-    migration = LegacyLLMProviderMigration.migrate(from: defaults)
+    var migration = LegacyLLMProviderMigration.migrate(from: defaults)
     XCTAssertEqual(migration.routing.primary, .local)
-    XCTAssertNil(migration.dayflowEndpointOverride)
     XCTAssertEqual(migration.localEndpointOverride, "http://localhost:9999")
 
     try setLegacyProviderType(.geminiDirect, in: defaults)
     migration = LegacyLLMProviderMigration.migrate(from: defaults)
     XCTAssertEqual(migration.routing.primary, .gemini)
-    XCTAssertNil(migration.dayflowEndpointOverride)
     XCTAssertNil(migration.localEndpointOverride)
   }
 
@@ -151,7 +143,7 @@ final class LLMProviderRoutingTests: XCTestCase {
     let defaults = try makeDefaults()
     let fixtures: [(String, LLMProviderID)] = [
       (#"{"geminiDirect":{}}"#, .gemini),
-      (#"{"dayflowBackend":{"endpoint":"https://example.com"}}"#, .dayflow),
+      (#"{"dayflowBackend":{"endpoint":"https://example.com"}}"#, .gemini),
       (#"{"ollamaLocal":{"endpoint":"http://localhost:9999"}}"#, .local),
       (#"{"chatGPTClaude":{}}"#, .chatGPT),
     ]
@@ -222,7 +214,7 @@ final class LLMProviderRoutingTests: XCTestCase {
 
   func testOneShotMigrationCopiesArtifactsBeforeWritingRoute() throws {
     let defaults = try makeRecordingDefaults()
-    try setLegacyProviderType(.dayflowBackend(endpoint: "https://example.com/api"), in: defaults)
+    try setLegacyProviderType(.geminiDirect, in: defaults)
     defaults.set("chatgpt_claude", forKey: LegacyLLMProviderMigration.Key.backupProvider)
     defaults.set("claude", forKey: LegacyLLMProviderMigration.Key.backupChatCLITool)
     let sharedOverrides = ActivityCardPromptOverrides(
@@ -238,16 +230,14 @@ final class LLMProviderRoutingTests: XCTestCase {
 
     let routing = try LLMProviderRoutingStore.load(from: defaults)
 
-    XCTAssertEqual(routing, LLMProviderRouting(primary: .dayflow, secondary: .claude))
+    XCTAssertEqual(routing, LLMProviderRouting(primary: .gemini, secondary: .claude))
     XCTAssertEqual(CodexPromptPreferences.load(from: defaults), sharedOverrides)
     XCTAssertEqual(ClaudePromptPreferences.load(from: defaults), sharedOverrides)
-    XCTAssertEqual(DayflowEndpointPreferences.load(from: defaults), "https://example.com/api")
     XCTAssertEqual(
       defaults.writtenKeys,
       [
         "chatGPTPromptOverrides",
         "claudePromptOverrides",
-        "dayflowProviderEndpointV2",
         LLMProviderRoutingStore.storageKey,
       ]
     )
@@ -278,10 +268,7 @@ final class LLMProviderRoutingTests: XCTestCase {
 
   func testMigrationPreservesExactArtifactsAndOnlyFillsMissingDestinations() throws {
     let defaults = try makeRecordingDefaults()
-    try setLegacyProviderType(
-      .dayflowBackend(endpoint: "https://legacy.example/api"),
-      in: defaults
-    )
+    try setLegacyProviderType(.geminiDirect, in: defaults)
     let sharedOverrides = ActivityCardPromptOverrides(titleBlock: "Legacy title")
     defaults.set(
       try JSONEncoder().encode(sharedOverrides),
@@ -292,21 +279,16 @@ final class LLMProviderRoutingTests: XCTestCase {
       existingChatGPTOverrides,
       to: defaults
     )
-    try DayflowEndpointPreferences.saveVerified(
-      "https://exact.example/api",
-      to: defaults
-    )
     defaults.writtenKeys = []
 
     let routing = try LLMProviderRoutingStore.load(from: defaults)
 
-    XCTAssertEqual(routing, LLMProviderRouting(primary: .dayflow))
+    XCTAssertEqual(routing, LLMProviderRouting(primary: .gemini))
     XCTAssertEqual(
       CodexPromptPreferences.load(from: defaults),
       existingChatGPTOverrides
     )
     XCTAssertEqual(ClaudePromptPreferences.load(from: defaults), sharedOverrides)
-    XCTAssertEqual(DayflowEndpointPreferences.load(from: defaults), "https://exact.example/api")
     XCTAssertEqual(
       defaults.writtenKeys,
       ["claudePromptOverrides", LLMProviderRoutingStore.storageKey]
@@ -368,16 +350,6 @@ final class LLMProviderRoutingTests: XCTestCase {
     XCTAssertNil(defaults.object(forKey: "claudePromptOverrides"))
   }
 
-  func testEndpointWriteFailureLeavesRouteAbsent() throws {
-    let defaults = try makeRecordingDefaults()
-    try setLegacyProviderType(.dayflowBackend(endpoint: "https://example.com/api"), in: defaults)
-    defaults.ignoredWriteKeys = ["dayflowProviderEndpointV2"]
-
-    XCTAssertThrowsError(try LLMProviderRoutingStore.load(from: defaults))
-    XCTAssertNil(defaults.object(forKey: LLMProviderRoutingStore.storageKey))
-    XCTAssertNil(defaults.object(forKey: "dayflowProviderEndpointV2"))
-  }
-
   func testLocalEndpointWriteFailureLeavesRouteAbsent() throws {
     let defaults = try makeRecordingDefaults()
     try setLegacyProviderType(.ollamaLocal(endpoint: "http://localhost:9999"), in: defaults)
@@ -425,7 +397,27 @@ final class LLMProviderRoutingTests: XCTestCase {
     XCTAssertEqual(defaults.data(forKey: LLMProviderRoutingStore.storageKey), corruptRouting)
     XCTAssertTrue(CodexPromptPreferences.load(from: defaults).isEmpty)
     XCTAssertTrue(ClaudePromptPreferences.load(from: defaults).isEmpty)
-    XCTAssertNil(DayflowEndpointPreferences.load(from: defaults))
+  }
+
+  func testStoredV2NamingRemovedHostedProviderFallsBackToGemini() throws {
+    let defaults = try makeDefaults()
+    defaults.set(
+      Data(#"{"schemaVersion":2,"primary":"dayflow","secondary":"claude"}"#.utf8),
+      forKey: LLMProviderRoutingStore.storageKey
+    )
+    XCTAssertEqual(
+      try LLMProviderRoutingStore.load(from: defaults),
+      LLMProviderRouting(primary: .gemini, secondary: .claude)
+    )
+
+    defaults.set(
+      Data(#"{"schemaVersion":2,"primary":"gemini","secondary":"dayflow"}"#.utf8),
+      forKey: LLMProviderRoutingStore.storageKey
+    )
+    XCTAssertEqual(
+      try LLMProviderRoutingStore.load(from: defaults),
+      LLMProviderRouting(primary: .gemini)
+    )
   }
 
   func testExistingV2IsAuthoritativeAndNeverReimportsLegacyValues() throws {

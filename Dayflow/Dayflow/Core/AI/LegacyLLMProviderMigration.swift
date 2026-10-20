@@ -11,7 +11,6 @@ enum LegacyLLMProviderMigration {
 
   enum ProviderType: Codable {
     case geminiDirect
-    case dayflowBackend(endpoint: String = "")
     case ollamaLocal(endpoint: String = "http://localhost:11434")
     case chatGPTClaude
   }
@@ -19,7 +18,6 @@ enum LegacyLLMProviderMigration {
   struct Result: Equatable {
     let routing: LLMProviderRouting
     let sharedPromptOverrides: ActivityCardPromptOverrides
-    let dayflowEndpointOverride: String?
     let localEndpointOverride: String?
     let completedLegacyCLIProvider: LLMProviderID?
   }
@@ -36,7 +34,6 @@ enum LegacyLLMProviderMigration {
 
   private struct PrimarySelection {
     let providerID: LLMProviderID
-    let dayflowEndpointOverride: String?
     let localEndpointOverride: String?
   }
 
@@ -54,7 +51,6 @@ enum LegacyLLMProviderMigration {
     return Result(
       routing: routing,
       sharedPromptOverrides: sharedPromptOverrides(from: defaults),
-      dayflowEndpointOverride: primary.dayflowEndpointOverride,
       localEndpointOverride: primary.localEndpointOverride,
       completedLegacyCLIProvider: completedLegacyCLIProvider(
         for: routing,
@@ -94,7 +90,6 @@ enum LegacyLLMProviderMigration {
       ) ?? .gemini
     return PrimarySelection(
       providerID: providerID,
-      dayflowEndpointOverride: nil,
       localEndpointOverride: nil
     )
   }
@@ -107,26 +102,17 @@ enum LegacyLLMProviderMigration {
     case .geminiDirect:
       return PrimarySelection(
         providerID: .gemini,
-        dayflowEndpointOverride: nil,
-        localEndpointOverride: nil
-      )
-    case .dayflowBackend(let endpoint):
-      return PrimarySelection(
-        providerID: .dayflow,
-        dayflowEndpointOverride: normalized(endpoint),
-        localEndpointOverride: nil
+          localEndpointOverride: nil
       )
     case .ollamaLocal(let endpoint):
       return PrimarySelection(
         providerID: .local,
-        dayflowEndpointOverride: nil,
-        localEndpointOverride: normalized(endpoint)
+          localEndpointOverride: normalized(endpoint)
       )
     case .chatGPTClaude:
       return PrimarySelection(
         providerID: providerID(for: preferredChatCLITool),
-        dayflowEndpointOverride: nil,
-        localEndpointOverride: nil
+          localEndpointOverride: nil
       )
     }
   }
@@ -136,8 +122,6 @@ enum LegacyLLMProviderMigration {
     combinedChatCLITool: LegacyChatCLITool
   ) -> LLMProviderID? {
     switch normalized(rawValue)?.lowercased() {
-    case LLMProviderID.dayflow.rawValue:
-      return .dayflow
     case LLMProviderID.gemini.rawValue:
       return .gemini
     case LLMProviderID.chatGPT.rawValue:

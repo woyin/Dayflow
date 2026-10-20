@@ -4,8 +4,6 @@ struct DailyRecapGenerationContext: Sendable {
   let targetDayString: String
   let sourceDayString: String
   let cards: [TimelineCard]
-  let observations: [Observation]
-  let priorEntries: [DailyStandupEntry]
   let highlightsTitle: String
   let tasksTitle: String
   let blockersTitle: String
@@ -19,7 +17,6 @@ struct DailyRecapProviderAvailability: Equatable, Sendable {
 enum DailyRecapGeneratorError: LocalizedError {
   case emptyCards(day: String)
   case noProviderSelected
-  case missingDayflowAuthToken
   case missingLocalConfiguration
   case missingGeminiAPIKey
   case missingCodexCLI
@@ -38,8 +35,6 @@ enum DailyRecapGeneratorError: LocalizedError {
           localized:
             "No Daily provider is selected. Choose one from the gear button above to turn Daily generation back on."
         )
-    case .missingDayflowAuthToken:
-      return String(localized: "Dayflow backend auth token is unavailable.")
     case .missingLocalConfiguration:
       return
         String(
@@ -203,10 +198,6 @@ final class DailyRecapGenerator {
     let localModel = DailyRecapProvider.local.modelOrTool
 
     return [
-      .dayflow: DailyRecapProviderAvailability(
-        isAvailable: true,
-        detail: DailyRecapProvider.dayflow.pickerSubtitle
-      ),
       .local: DailyRecapProviderAvailability(
         isAvailable: isLocalConfigured,
         detail: isLocalConfigured
@@ -250,8 +241,6 @@ final class DailyRecapGenerator {
     )
 
     switch provider {
-    case .dayflow:
-      return try await generateWithDayflow(context: context, metadata: metadata)
     case .local:
       return try await generateWithLocal(context: context, metadata: metadata)
     case .gemini:
@@ -291,111 +280,6 @@ final class DailyRecapGenerator {
     }
 
     return lines.joined(separator: "\n")
-  }
-
-  static func makeObservationsText(day: String, observations: [Observation]) -> String {
-    guard !observations.isEmpty else {
-      return String(localized: "No observations were recorded for \(day).")
-    }
-
-    let ordered = observations.sorted { $0.startTs < $1.startTs }
-    var lines: [String] = ["Observations for \(day):", ""]
-
-    for observation in ordered {
-      let text = observation.observation.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !text.isEmpty else { continue }
-      let start = humanReadableClockTime(unixTimestamp: observation.startTs)
-      let end = humanReadableClockTime(unixTimestamp: observation.endTs)
-      lines.append("\(start) - \(end): \(text)")
-    }
-
-    if lines.count <= 2 {
-      return String(localized: "No observations were recorded for \(day).")
-    }
-    return lines.joined(separator: "\n")
-  }
-
-  static func makePriorDailyText(entries: [DailyStandupEntry]) -> String {
-    guard !entries.isEmpty else { return "" }
-
-    return entries.map { entry in
-      let payload = entry.payloadJSON.trimmingCharacters(in: .whitespacesAndNewlines)
-      return String(
-        localized: """
-          Day \(entry.standupDay):
-          \(payload)
-          """)
-    }
-    .joined(separator: "\n\n")
-  }
-
-  static func makePreferencesText(
-    highlightsTitle: String,
-    tasksTitle: String,
-    blockersTitle: String
-  ) -> String {
-    let preferences: [String: String] = [
-      "highlights_title": highlightsTitle,
-      "tasks_title": tasksTitle,
-      "blockers_title": blockersTitle,
-    ]
-
-    guard
-      let jsonData = try? JSONSerialization.data(
-        withJSONObject: preferences,
-        options: [.sortedKeys]
-      ),
-      let jsonString = String(data: jsonData, encoding: .utf8)
-    else {
-      return ""
-    }
-
-    return jsonString
-  }
-
-  private func generateWithDayflow(
-    context: DailyRecapGenerationContext,
-    metadata: DailyStandupGenerationMetadata
-  ) async throws -> DailyStandupDraft {
-    guard let provider = makeDayflowProvider() else {
-      throw DailyRecapGeneratorError.missingDayflowAuthToken
-    }
-
-    let request = DayflowDailyGenerationRequest(
-      day: context.sourceDayString,
-      cardsText: Self.makeCardsText(day: context.sourceDayString, cards: context.cards),
-      observationsText: Self.makeObservationsText(
-        day: context.sourceDayString,
-        observations: context.observations
-      ),
-      priorDailyText: Self.makePriorDailyText(entries: context.priorEntries),
-      preferencesText: Self.makePreferencesText(
-        highlightsTitle: context.highlightsTitle,
-        tasksTitle: context.tasksTitle,
-        blockersTitle: context.blockersTitle
-      ),
-      preferredOutputLanguage: Self.preferredOutputLanguage()
-    )
-
-    let response = try await provider.generateDaily(request)
-    guard !response.highlights.isEmpty || !response.unfinished.isEmpty || !response.blockers.isEmpty
-    else {
-      throw DailyRecapGeneratorError.emptyGeneratedContent(day: context.sourceDayString)
-    }
-
-    let draft = DailyStandupDraft(
-      highlightsTitle: context.highlightsTitle,
-      highlights: Self.normalizedBulletItems(from: response.highlights),
-      tasksTitle: context.tasksTitle,
-      tasks: Self.normalizedBulletItems(from: response.unfinished),
-      blockersTitle: context.blockersTitle,
-      blockersBody: Self.normalizedBlockersText(from: response.blockers),
-      generation: metadata
-    )
-    guard draft.hasGeneratedContent else {
-      throw DailyRecapGeneratorError.emptyGeneratedContent(day: context.sourceDayString)
-    }
-    return draft
   }
 
   private func generateWithGemini(
@@ -506,18 +390,6 @@ final class DailyRecapGenerator {
     return try makeDraft(from: parsed, context: context, metadata: metadata)
   }
 
-  private func makeDayflowProvider() -> DayflowBackendProvider? {
-    // Daily intentionally uses the legacy PostHog distinct-id token contract.
-    // CardGen uses DayflowAuthManager session tokens, but Daily should not
-    // move to account-session auth without an explicit app migration.
-    let token = AnalyticsService.shared.backendAuthToken()
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !token.isEmpty else { return nil }
-
-    guard let endpoint = resolvedDayflowEndpoint() else { return nil }
-    return DayflowBackendProvider(token: token, endpoint: endpoint)
-  }
-
   private func makeLocalProvider() -> OllamaProvider? {
     let defaults = UserDefaults.standard
     let rawEngine = defaults.string(forKey: "llmLocalEngine") ?? LocalEngine.ollama.rawValue
@@ -547,13 +419,6 @@ final class DailyRecapGenerator {
       defaults.string(forKey: "llmLocalModelId")?
       .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return !baseURL.isEmpty && !modelId.isEmpty
-  }
-
-  private func resolvedDayflowEndpoint() -> String? {
-    _ = try? LLMProviderRoutingStore.load()
-    return DayflowBackendConfiguration.endpoint(
-      legacySavedEndpoint: DayflowEndpointPreferences.load()
-    )
   }
 
   private func makeDraft(
@@ -615,10 +480,6 @@ final class DailyRecapGenerator {
 
       Return exactly one JSON object and nothing before or after it.
       """
-  }
-
-  private static func preferredOutputLanguage() -> String? {
-    LLMOutputLanguagePreferences.normalizedOverride
   }
 
   private static func makeLocalPromptLanguageSection() -> String {
@@ -785,10 +646,6 @@ final class DailyRecapGenerator {
     normalizedStrings(from: values).map { DailyBulletItem(text: $0) }
   }
 
-  private static func normalizedBlockersText(from values: [String]) -> String {
-    normalizedStrings(from: values).joined(separator: "\n")
-  }
-
   private static func humanReadableClockTime(_ input: String) -> String {
     let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let minuteOfDay = parseTimeHMMA(timeString: trimmed) else {
@@ -797,16 +654,6 @@ final class DailyRecapGenerator {
 
     let hour24 = (minuteOfDay / 60) % 24
     let minute = minuteOfDay % 60
-    let meridiem = hour24 >= 12 ? "pm" : "am"
-    let hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12
-    return String(format: "%d:%02d%@", hour12, minute, meridiem)
-  }
-
-  private static func humanReadableClockTime(unixTimestamp: Int) -> String {
-    let date = Date(timeIntervalSince1970: TimeInterval(unixTimestamp))
-    let calendar = Calendar.current
-    let hour24 = calendar.component(.hour, from: date)
-    let minute = calendar.component(.minute, from: date)
     let meridiem = hour24 >= 12 ? "pm" : "am"
     let hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12
     return String(format: "%d:%02d%@", hour12, minute, meridiem)

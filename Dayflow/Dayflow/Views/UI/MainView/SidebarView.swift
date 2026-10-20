@@ -21,7 +21,6 @@ enum SidebarIcon: CaseIterable {
   case daily
   case weekly
   case chat
-  case flow
   case agents
   case bug
   case settings
@@ -32,7 +31,6 @@ enum SidebarIcon: CaseIterable {
     case .daily: return "DailyIcon"
     case .weekly: return "WeeklyIcon"
     case .chat: return "ChatIcon"
-    case .flow: return "FlowIcon"
     case .agents: return "AgentsIcon"
     case .bug: return nil
     case .settings: return nil
@@ -41,7 +39,6 @@ enum SidebarIcon: CaseIterable {
 
   var systemNameFallback: String? {
     switch self {
-    case .flow: return "water.waves"
     case .agents: return "sparkles"
     case .bug: return "exclamationmark.bubble.fill"
     case .settings: return "gearshape.fill"
@@ -61,7 +58,6 @@ enum SidebarIcon: CaseIterable {
         localized: "sidebar.weekly", defaultValue: "Weekly",
         comment: "Short sidebar label for the weekly recap view.")
     case .chat: return String(localized: "Chat")
-    case .flow: return String(localized: "Flow")
     case .agents: return String(localized: "Agents")
     case .bug: return String(localized: "Support")
     case .settings: return String(localized: "Settings")
@@ -74,7 +70,6 @@ enum SidebarIcon: CaseIterable {
     case .daily: return "daily"
     case .weekly: return "weekly"
     case .chat: return "dashboard"
-    case .flow: return "flow"
     case .agents: return "agents"
     case .bug: return "bug_report"
     case .settings: return "settings"
@@ -104,8 +99,6 @@ struct SidebarView: View {
     switch icon {
     case .bug:
       return badgeManager.supportUnreadCount > 0
-    case .flow:
-      return badgeManager.flowWaitlistUnreadCount > 0
     case .daily:
       return badgeManager.hasPendingDailyRecap
     default:

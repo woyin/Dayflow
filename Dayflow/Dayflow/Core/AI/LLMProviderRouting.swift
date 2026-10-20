@@ -72,11 +72,6 @@ enum LLMProviderRoutingStore {
         to: defaults
       )
     }
-    if let endpoint = migration.dayflowEndpointOverride,
-      !DayflowEndpointPreferences.hasStoredValue(in: defaults)
-    {
-      try DayflowEndpointPreferences.saveVerified(endpoint, to: defaults)
-    }
     if let endpoint = migration.localEndpointOverride,
       normalizedLocalEndpoint(in: defaults) == nil
     {
@@ -145,6 +140,24 @@ enum LLMProviderRoutingStore {
     }
   }
 
+  /// The hosted "dayflow" provider no longer exists. Stored routing that still names it falls
+  /// back to Gemini as primary, or drops it as secondary, instead of reading as corrupt.
+  private static func scrubbingRemovedProviders(from data: Data) -> Data {
+    let removedID = "dayflow"
+    guard var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+      object["primary"] as? String == removedID || object["secondary"] as? String == removedID
+    else { return data }
+    if object["primary"] as? String == removedID {
+      object["primary"] = LLMProviderID.gemini.rawValue
+    }
+    if object["secondary"] as? String == removedID
+      || object["secondary"] as? String == object["primary"] as? String
+    {
+      object.removeValue(forKey: "secondary")
+    }
+    return (try? JSONSerialization.data(withJSONObject: object)) ?? data
+  }
+
   private static func decodeStoredRouting(from defaults: UserDefaults) throws
     -> LLMProviderRouting
   {
@@ -154,7 +167,8 @@ enum LLMProviderRoutingStore {
 
     let routing: LLMProviderRouting
     do {
-      routing = try JSONDecoder().decode(LLMProviderRouting.self, from: data)
+      routing = try JSONDecoder().decode(
+        LLMProviderRouting.self, from: scrubbingRemovedProviders(from: data))
     } catch {
       throw LLMProviderRoutingStoreError.corruptStoredValue
     }

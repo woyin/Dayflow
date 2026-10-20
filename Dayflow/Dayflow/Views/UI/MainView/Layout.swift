@@ -356,10 +356,8 @@ extension MainView {
       selectedIcon = .settings
       timelineFailureToastPayload = nil
     }
-    let settingsTab: Notification.Name =
-      payload.destination == .account ? .openAccountSettings : .openProvidersSettings
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-      NotificationCenter.default.post(name: settingsTab, object: nil)
+      NotificationCenter.default.post(name: .openProvidersSettings, object: nil)
     }
   }
 
@@ -438,8 +436,7 @@ private struct TimelineFailureToastView: View {
   @State private var didCopy = false
 
   private var actionTitle: String {
-    payload.destination == .account
-      ? String(localized: "Open Account") : String(localized: "Open Provider Settings")
+    String(localized: "Open Provider Settings")
   }
 
   var body: some View {
@@ -496,8 +493,6 @@ private struct TimelineFailureToastView: View {
       Image("ChatGPTLogo").resizable().scaledToFit()
     } else if name.contains("gemini") || name.contains("gemma") {
       Image("GeminiLogo").resizable().scaledToFit()
-    } else if name.contains("dayflow") {
-      Image("DayflowLogo").resizable().scaledToFit()
     } else {
       Image(systemName: "cpu")
         .font(.system(size: 15))

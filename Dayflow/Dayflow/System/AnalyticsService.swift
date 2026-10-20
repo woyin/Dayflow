@@ -217,8 +217,6 @@ final class AnalyticsService {
   private init() {}
 
   private let optInKey = "analyticsOptIn"
-  private let backendAuthFallbackTokenKey = "localBackendAuthFallbackToken"
-  private let backendAuthOverrideTokenKey = "dayflowBackendAuthTokenOverride"
   private let throttleLock = NSLock()
   private var throttles: [String: Date] = [:]
 
@@ -269,77 +267,6 @@ final class AnalyticsService {
       UserDefaults.standard.set(true, forKey: "installTsSent")
     }
     PostHogSDK.shared.capture("person_props_updated", properties: payload)
-  }
-
-  /// Returns the stable PostHog distinct ID used as backend auth identity.
-  /// Source of truth is PostHog SDK storage (not keychain).
-  func backendAuthToken() -> String {
-    let defaults = UserDefaults.standard
-    #if DEBUG
-      if let override = defaults.string(forKey: backendAuthOverrideTokenKey)?
-        .trimmingCharacters(in: .whitespacesAndNewlines),
-        !override.isEmpty
-      {
-        // This override feeds the legacy Daily/PostHog auth path only.
-        // Dayflow account session tokens are intentionally ignored here; CardGen
-        // reads them through DayflowAuthManager instead.
-        if override.hasPrefix("dfs:") {
-          print(
-            "[AnalyticsService] backendAuthToken ignored_debug_override "
-              + "reason=dayflow_session_token length=\(override.count)"
-          )
-        } else {
-          print(
-            "[AnalyticsService] backendAuthToken source=debug_override_user_defaults "
-              + "length=\(override.count)"
-          )
-          return override
-        }
-      }
-    #endif
-
-    let distinctId = PostHogSDK.shared.getDistinctId().trimmingCharacters(
-      in: .whitespacesAndNewlines)
-    if !distinctId.isEmpty {
-      #if DEBUG
-        print(
-          "[AnalyticsService] backendAuthToken source=posthog_distinct_id "
-            + "length=\(distinctId.count)"
-        )
-      #endif
-      return distinctId
-    }
-
-    #if DEBUG
-      // Local-dev fallback so backend-authenticated features still work when PostHog
-      // is not configured for the current build.
-      if let existing = defaults.string(forKey: backendAuthFallbackTokenKey)?
-        .trimmingCharacters(in: .whitespacesAndNewlines),
-        !existing.isEmpty
-      {
-        print(
-          "[AnalyticsService] backendAuthToken source=debug_fallback_existing "
-            + "length=\(existing.count)"
-        )
-        if existing.hasPrefix("local-") {
-          print(
-            "[AnalyticsService] backendAuthToken warning=fallback_token_looks_local "
-              + "length=\(existing.count)"
-          )
-        }
-        return existing
-      }
-
-      let generated = "\(UUID().uuidString.lowercased())"
-      defaults.set(generated, forKey: backendAuthFallbackTokenKey)
-      print(
-        "[AnalyticsService] backendAuthToken source=debug_fallback_generated "
-          + "length=\(generated.count)"
-      )
-      return generated
-    #else
-      return ""
-    #endif
   }
 
   func postHogDistinctIdForAppcast() -> String? {

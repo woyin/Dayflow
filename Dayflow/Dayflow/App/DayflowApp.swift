@@ -262,9 +262,6 @@ struct DayflowApp: App {
   @StateObject private var systemAppearance = SystemAppearanceObserver()
   @AppStorage(DayflowAppearance.storageKey) private var appearance: DayflowAppearance = .system
   @AppStorage("useBlankUI") private var useBlankUI = false
-  /// Mirrors FlowNudgeVariant.current so the menu title re-renders on toggle.
-  @AppStorage(FlowNudgeVariant.defaultsKey) private var flowNudgeVariant = FlowNudgeVariant.side
-    .rawValue
   @State private var showVideoLaunch = true
   @State private var contentOpacity = 0.0
   @State private var contentScale = 0.98
@@ -458,18 +455,6 @@ struct DayflowApp: App {
         }
         .keyboardShortcut("N", modifiers: [.command, .shift])
       }
-
-      CommandGroup(after: .appInfo) {
-        Divider()
-        Button("Flow: Simulate Distraction") {
-          FlowSessionMirror.shared.simulateDistraction()
-        }
-        .keyboardShortcut("D", modifiers: [.command, .shift])
-        Button("Flow: Nudge Style — \(FlowNudgeVariant.current.title)") {
-          FlowNudgeVariant.current = FlowNudgeVariant.current.next
-          flowNudgeVariant = FlowNudgeVariant.current.rawValue
-        }
-      }
     }
     .defaultSize(width: 1200, height: 800)
 
@@ -532,8 +517,6 @@ struct DayflowApp: App {
         NotificationCenter.default.post(name: .navigateToDaily, object: nil)
       case .support:
         NotificationCenter.default.post(name: .navigateToSupport, object: nil)
-      case .flow:
-        NotificationCenter.default.post(name: .navigateToFlow, object: nil)
       case .timeline:
         NotificationCenter.default.post(name: .navigateToTimeline, object: nil)
       case .weekly:
@@ -558,8 +541,6 @@ extension Notification.Name {
   static let showScreenRecordingPermissionNotice = Notification.Name(
     "showScreenRecordingPermissionNotice")
   static let openProvidersSettings = Notification.Name("openProvidersSettings")
-  static let openAccountSettings = Notification.Name("openAccountSettings")
-  static let navigateToFlow = Notification.Name("navigateToFlow")
   static let navigateToTimeline = Notification.Name("navigateToTimeline")
 }
 

@@ -27,8 +27,6 @@ struct LLMProviderSetupView: View {
       return String(localized: "Connect an AI endpoint")
     case .gemini:
       return String(localized: "Gemini")
-    case .dayflow:
-      return String(localized: "Dayflow Pro")
     }
   }
 
