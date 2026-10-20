@@ -262,12 +262,6 @@ struct DayflowApp: App {
   @StateObject private var systemAppearance = SystemAppearanceObserver()
   @AppStorage(DayflowAppearance.storageKey) private var appearance: DayflowAppearance = .system
   @AppStorage("useBlankUI") private var useBlankUI = false
-  /// Mirrors FlowNudgeVariant.current so the menu title re-renders on toggle.
-  @AppStorage(FlowNudgeVariant.defaultsKey) private var flowNudgeVariant = FlowNudgeVariant.side
-    .rawValue
-  @State private var showVideoLaunch = true
-  @State private var contentOpacity = 0.0
-  @State private var contentScale = 0.98
   @State private var isShowingGitHubStarPrompt = false
   @State private var gitHubStarCount: Int? = nil
   @State private var gitHubStarPromptUsesBrowser = false
@@ -304,7 +298,7 @@ struct DayflowApp: App {
             )
             .environmentObject(categoryStore)
             .environmentObject(updaterManager)
-          } else if !showVideoLaunch {
+          } else {
             // Onboarding is designed light-only.
             OnboardingFlow()
               .environmentObject(AppState.shared)
@@ -313,46 +307,7 @@ struct DayflowApp: App {
               .dayflowTheme(.light)
           }
         }
-        .opacity(contentOpacity)
-        .scaleEffect(contentScale)
-        .animation(.easeOut(duration: 0.3).delay(0.15), value: contentOpacity)
-        .animation(.easeOut(duration: 0.3).delay(0.15), value: contentScale)
-
-        // Video overlay on top with scale + opacity exit
-        if showVideoLaunch {
-          VideoLaunchView()
-            .onVideoComplete {
-              // Overlapping animations for smooth handoff
-              withAnimation(.easeOut(duration: 0.25)) {
-                // Start revealing content while video fades
-                contentOpacity = 1.0
-                contentScale = 1.0
-              }
-
-              // Slightly delayed video exit for overlap
-              DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.easeIn(duration: 0.2)) {
-                  showVideoLaunch = false
-                }
-              }
-
-              dispatchPendingNotificationNavigation(after: 0.3)
-            }
-            .opacity(showVideoLaunch ? 1 : 0)
-            .scaleEffect(showVideoLaunch ? 1 : 1.02)
-            .animation(.easeIn(duration: 0.2), value: showVideoLaunch)
-            .onAppear {
-              // Skip video if opening via notification tap
-              if hasPendingNotificationNavigation {
-                showVideoLaunch = false
-                contentOpacity = 1.0
-                contentScale = 1.0
-                dispatchPendingNotificationNavigation(after: 0.1)
-              }
-            }
-        }
-
-        if didOnboard && !showVideoLaunch && isShowingGitHubStarPrompt {
+        if didOnboard && isShowingGitHubStarPrompt {
           GitHubStarPromptCard(
             starCount: gitHubStarCount,
             usesBrowser: gitHubStarPromptUsesBrowser,
@@ -366,7 +321,7 @@ struct DayflowApp: App {
           .zIndex(10)
         }
 
-        if didOnboard && !showVideoLaunch, let survey = surveyCenter.activeSurvey {
+        if didOnboard, let survey = surveyCenter.activeSurvey {
           SurveyPromptCard(survey: survey, center: surveyCenter)
             .id(survey.id)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -398,16 +353,12 @@ struct DayflowApp: App {
       .resolveDayflowTheme()
       .resolveStylePreview()
       .onAppear {
-        if !showVideoLaunch {
-          dispatchPendingNotificationNavigation(after: 0.1)
-        }
+        dispatchPendingNotificationNavigation(after: 0.1)
       }
       .onReceive(
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
       ) { _ in
-        if !showVideoLaunch {
-          dispatchPendingNotificationNavigation(after: 0.1)
-        }
+        dispatchPendingNotificationNavigation(after: 0.1)
       }
       .frame(minWidth: 900, maxWidth: .infinity, minHeight: 558, maxHeight: .infinity)
     }
@@ -457,18 +408,6 @@ struct DayflowApp: App {
           NotificationCenter.default.post(name: .showWhatsNew, object: nil)
         }
         .keyboardShortcut("N", modifiers: [.command, .shift])
-      }
-
-      CommandGroup(after: .appInfo) {
-        Divider()
-        Button("Flow: Simulate Distraction") {
-          FlowSessionMirror.shared.simulateDistraction()
-        }
-        .keyboardShortcut("D", modifiers: [.command, .shift])
-        Button("Flow: Nudge Style — \(FlowNudgeVariant.current.title)") {
-          FlowNudgeVariant.current = FlowNudgeVariant.current.next
-          flowNudgeVariant = FlowNudgeVariant.current.rawValue
-        }
       }
     }
     .defaultSize(width: 1200, height: 800)
@@ -532,8 +471,6 @@ struct DayflowApp: App {
         NotificationCenter.default.post(name: .navigateToDaily, object: nil)
       case .support:
         NotificationCenter.default.post(name: .navigateToSupport, object: nil)
-      case .flow:
-        NotificationCenter.default.post(name: .navigateToFlow, object: nil)
       case .timeline:
         NotificationCenter.default.post(name: .navigateToTimeline, object: nil)
       case .weekly:
@@ -558,8 +495,6 @@ extension Notification.Name {
   static let showScreenRecordingPermissionNotice = Notification.Name(
     "showScreenRecordingPermissionNotice")
   static let openProvidersSettings = Notification.Name("openProvidersSettings")
-  static let openAccountSettings = Notification.Name("openAccountSettings")
-  static let navigateToFlow = Notification.Name("navigateToFlow")
   static let navigateToTimeline = Notification.Name("navigateToTimeline")
 }
 

@@ -50,16 +50,7 @@ final class NotificationService: NSObject, ObservableObject {
     notifyChatReply()
   }
 
-  func clearFlowWaitlistReplyNotification() {
-    center.removeDeliveredNotifications(withIdentifiers: ["flow.waitlist.reply"])
-    center.removePendingNotificationRequests(withIdentifiers: ["flow.waitlist.reply"])
-  }
-
-  func notifyFlowWaitlistReply(sessionKey: String) {
-    notifyChatReply(flowSessionKey: sessionKey)
-  }
-
-  private func notifyChatReply(flowSessionKey: String? = nil) {
+  private func notifyChatReply() {
     Task {
       var status = await authorizationStatus()
       if status == .notDetermined {
@@ -68,20 +59,11 @@ final class NotificationService: NSObject, ObservableObject {
       }
       guard Self.canScheduleNotifications(for: status) else { return }
       let badges = NotificationBadgeManager.shared
-      if let flowSessionKey {
-        guard badges.flowWaitlistSessionKey == flowSessionKey, badges.flowWaitlistUnreadCount > 0
-        else { return }
-      } else {
-        guard badges.supportUnreadCount > 0 else { return }
-      }
-      let isFlow = flowSessionKey != nil
-      let identifier = isFlow ? "flow.waitlist.reply" : "support.reply"
+      guard badges.supportUnreadCount > 0 else { return }
+      let identifier = "support.reply"
       let content = UNMutableNotificationContent()
       content.title = String(localized: "New reply from Dayflow")
-      content.body =
-        isFlow
-        ? String(localized: "You have a new reply about Flow. Open Flow to read it.")
-        : String(localized: "You have a new support reply. Open Support to read it.")
+      content.body = String(localized: "You have a new support reply. Open Support to read it.")
       content.sound = .default
       do {
         try await center.add(
@@ -415,11 +397,10 @@ extension NotificationService: UNUserNotificationCenterDelegate {
     let isWeeklyUnlockNotification = identifier.hasPrefix("weekly.")
 
     let isSupportNotification = identifier.hasPrefix("support.")
-    let isFlowNotification = identifier == "flow.waitlist.reply"
     let isGettingStartedNotification = identifier.hasPrefix("gettingStarted.")
     guard
       isDailyRecapNotification || isWeeklyUnlockNotification || isSupportNotification
-        || isFlowNotification || isGettingStartedNotification
+        || isGettingStartedNotification
     else {
       completionHandler()
       return
@@ -429,9 +410,6 @@ extension NotificationService: UNUserNotificationCenterDelegate {
       if isGettingStartedNotification {
         AnalyticsService.shared.capture("getting_started_first_cards_notification_clicked")
         AppDelegate.pendingNotificationNavigationDestination = .timeline
-        activateAppForNotificationTap()
-      } else if isFlowNotification {
-        AppDelegate.pendingNotificationNavigationDestination = .flow
         activateAppForNotificationTap()
       } else if isSupportNotification {
         AppDelegate.pendingNotificationNavigationDestination = .support
@@ -485,7 +463,7 @@ extension NotificationService: UNUserNotificationCenterDelegate {
       return
     }
 
-    if identifier.hasPrefix("support.") || identifier == "flow.waitlist.reply" {
+    if identifier.hasPrefix("support.") {
       completionHandler([.banner, .sound])
       return
     }

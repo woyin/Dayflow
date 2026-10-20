@@ -25,19 +25,17 @@ struct OnboardingFlow: View {
 
   private var onboardingFilledSegments: Int {
     switch step {
-    case .introVideo: return 0
-    case .roleSelection: return 0
-    case .referral: return 1
-    case .llmSelection: return 2
-    case .llmSetup: return 3
-    case .screen: return 4
-    case .personalGoal: return 5
-    case .completion: return 6
+    case .referral: return 0
+    case .llmSelection: return 1
+    case .llmSetup: return 2
+    case .screen: return 3
+    case .personalGoal: return 4
+    case .completion: return 5
     }
   }
 
   private var showsProgressRing: Bool {
-    step != .introVideo && step != .llmSelection
+    step != .llmSelection
   }
 
   @ViewBuilder
@@ -45,45 +43,6 @@ struct OnboardingFlow: View {
     ZStack(alignment: .bottomLeading) {
       // NO NESTING! Just render the appropriate view directly - NO GROUP!
       switch step {
-      case .introVideo:
-        OnboardingPrototypeVideoIntroStep(
-          videoName: "DayflowOnboarding",
-          onPlaybackStarted: {
-            AnalyticsService.shared.capture(
-              "onboarding_video_started", ["asset": "DayflowOnboarding.mp4"])
-          },
-          onPlaybackCompleted: { reason in
-            AnalyticsService.shared.capture("onboarding_video_completed", ["reason": reason])
-            advance()
-          }
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .transition(.opacity)
-        .onAppear {
-          AnalyticsService.shared.screen("onboarding_intro_video")
-          if !UserDefaults.standard.bool(forKey: "onboardingStarted") {
-            AnalyticsService.shared.capture("onboarding_started")
-            UserDefaults.standard.set(true, forKey: "onboardingStarted")
-            AnalyticsService.shared.setPersonProperties(["onboarding_status": "in_progress"])
-          }
-        }
-
-      case .roleSelection:
-        OnboardingPrototypeRoleSelectionStep(
-          onContinue: { selectedRole in
-            categoryStore.setOnboardingRole(selectedRole)
-            // Onboarding no longer has a category step, so apply the role's preset here.
-            categoryStore.applyOnboardingPresetIfNeeded()
-            AnalyticsService.shared.capture("onboarding_role_selected", ["role": selectedRole])
-            advance(selectedRole: selectedRole)
-          }
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .transition(.opacity)
-        .onAppear {
-          AnalyticsService.shared.screen("onboarding_role_selection")
-        }
-
       case .referral:
         OnboardingPrototypeReferralStep(
           onContinue: { option, detail in
@@ -107,12 +66,7 @@ struct OnboardingFlow: View {
 
       case .llmSelection:
         OnboardingPrototypeChooseProviderStep(
-          flowID: flowID,
-          flowVariant: "production_onboarding",
           onSelect: { providerID in
-            if providerID == .dayflow, !saveRouting(primary: providerID) {
-              return
-            }
             selectedProviderIDRawValue = providerID.rawValue
 
             var props: [String: Any] = [
@@ -124,9 +78,6 @@ struct OnboardingFlow: View {
               props["local_engine"] = localEngine
             }
             AnalyticsService.shared.capture("llm_provider_selected", props)
-            if providerID == .dayflow {
-              recordCurrentProvider(providerID)
-            }
             advance(extraProps: props)
           }
         )
@@ -161,10 +112,7 @@ struct OnboardingFlow: View {
       case .screen:
         ScreenRecordingPermissionView(
           onBack: {
-            // Go back to llmSetup, or llmSelection if they picked dayflow
-            let backStep: OnboardingStep =
-              (selectedProviderID == .dayflow) ? .llmSelection : .llmSetup
-            setStep(backStep)
+            setStep(.llmSetup)
           },
           onNext: { advance() }
         )
@@ -307,26 +255,15 @@ struct OnboardingFlow: View {
     AnalyticsService.shared.capture("onboarding_step_completed", props)
   }
 
-  private func advance(selectedRole: String? = nil, extraProps: [String: Any] = [:]) {
+  private func advance(extraProps: [String: Any] = [:]) {
     switch step {
-    case .introVideo:
-      markStepCompleted(step)
-      step.next()
-      savedStepRawValue = step.rawValue
-    case .roleSelection:
-      let extraProps = selectedRole.map { ["role": $0] } ?? [:]
-      markStepCompleted(step, extraProps: extraProps)
-      step.next()
-      savedStepRawValue = step.rawValue
     case .referral:
       markStepCompleted(step, extraProps: extraProps)
       step.next()
       savedStepRawValue = step.rawValue
     case .llmSelection:
       markStepCompleted(step, extraProps: extraProps)
-      let nextStep: OnboardingStep =
-        (selectedProviderID == .dayflow) ? .screen : .llmSetup
-      setStep(nextStep)
+      setStep(.llmSetup)
     case .llmSetup:
       markStepCompleted(step)
       setStep(.screen)
@@ -356,14 +293,10 @@ struct OnboardingFlow: View {
 
 /// Wizard step order
 enum OnboardingStep: Int, CaseIterable {
-  case introVideo, roleSelection, referral, llmSelection, llmSetup, screen, personalGoal, completion
+  case referral, llmSelection, llmSetup, screen, personalGoal, completion
 
   var analyticsName: String {
     switch self {
-    case .introVideo:
-      return "intro_video"
-    case .roleSelection:
-      return "role_selection"
     case .referral:
       return "referral"
     case .llmSelection:
@@ -390,7 +323,7 @@ enum OnboardingStep: Int, CaseIterable {
 enum OnboardingStepMigration {
   static let schemaVersionKey = "onboardingStepSchemaVersion"
   private static let onboardingStepKey = "onboardingStep"
-  static let currentVersion = 6
+  static let currentVersion = 8
 
   @discardableResult
   static func migrateIfNeeded(defaults: UserDefaults = .standard) -> Int {
@@ -442,13 +375,27 @@ enum OnboardingStepMigration {
       migratedValue = migrateV5toV6(migratedValue)
     }
 
+    // v6 → v7: remove the intro video
+    // Old v6: introVideo=0, roleSelection=1, referral=2, llmSelection=3, llmSetup=4, screen=5, personalGoal=6, completion=7
+    // New v7: roleSelection=0, referral=1, llmSelection=2, llmSetup=3, screen=4, personalGoal=5, completion=6
+    if storedVersion < 7 {
+      migratedValue = migrateV6toV7(migratedValue)
+    }
+
+    // v7 → v8: remove the role-selection screen
+    // Old v7: roleSelection=0, referral=1, llmSelection=2, llmSetup=3, screen=4, personalGoal=5, completion=6
+    // New v8: referral=0, llmSelection=1, llmSetup=2, screen=3, personalGoal=4, completion=5
+    if storedVersion < 8 {
+      migratedValue = migrateV7toV8(migratedValue)
+    }
+
     defaults.set(migratedValue, forKey: onboardingStepKey)
     defaults.set(currentVersion, forKey: schemaVersionKey)
     return migratedValue
   }
 
   static func restoredStep(defaults: UserDefaults = .standard) -> OnboardingStep {
-    OnboardingStep(rawValue: migrateIfNeeded(defaults: defaults)) ?? .introVideo
+    OnboardingStep(rawValue: migrateIfNeeded(defaults: defaults)) ?? .referral
   }
 
   static func migrateV0toV1(_ rawValue: Int) -> Int {
@@ -520,10 +467,28 @@ enum OnboardingStepMigration {
     }
   }
 
+  static func migrateV6toV7(_ rawValue: Int) -> Int {
+    switch rawValue {
+    case 0: return 0  // introVideo → roleSelection
+    case 1...7: return rawValue - 1  // every later step shifts back one
+    default: return 0
+    }
+  }
+
+  static func migrateV7toV8(_ rawValue: Int) -> Int {
+    switch rawValue {
+    case 0: return 0  // roleSelection → referral
+    case 1...6: return rawValue - 1  // every later step shifts back one
+    default: return 0
+    }
+  }
+
   // Keep for testing compatibility
   static func migrateRawValue(_ rawValue: Int) -> Int {
-    migrateV5toV6(
-      migrateV4toV5(migrateV3toV4(migrateV2toV3(migrateV1toV2(migrateV0toV1(rawValue))))))
+    migrateV7toV8(
+      migrateV6toV7(
+        migrateV5toV6(
+          migrateV4toV5(migrateV3toV4(migrateV2toV3(migrateV1toV2(migrateV0toV1(rawValue))))))))
   }
 }
 

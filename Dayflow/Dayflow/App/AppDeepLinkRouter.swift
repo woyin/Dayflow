@@ -5,7 +5,6 @@ final class AppDeepLinkRouter {
   enum Action: String {
     case startRecording = "start-recording"
     case stopRecording = "stop-recording"
-    case referral = "referral"
 
     init?(identifier: String) {
       switch identifier.lowercased() {
@@ -13,8 +12,6 @@ final class AppDeepLinkRouter {
         self = .startRecording
       case Self.stopRecording.rawValue, "stop", "pause":
         self = .stopRecording
-      case Self.referral.rawValue, "claim", "r":
-        self = .referral
       default:
         return nil
       }
@@ -69,8 +66,6 @@ final class AppDeepLinkRouter {
       startRecording()
     case .stopRecording:
       stopRecording()
-    case .referral:
-      saveReferralCode(from: url)
     }
   }
 
@@ -89,21 +84,4 @@ final class AppDeepLinkRouter {
     }
     RecordingControl.stop(reason: "deeplink")
   }
-
-  private func saveReferralCode(from url: URL) {
-    let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-    let queryCode = components?.queryItems?
-      .first(where: { $0.name.lowercased() == "code" || $0.name.lowercased() == "ref" })?
-      .value
-    let pathCode = url.path
-      .split(separator: "/")
-      .map(String.init)
-      .first(where: { $0.count >= 6 })
-    guard let code = queryCode ?? pathCode else {
-      print("[DeepLink] Referral link missing code")
-      return
-    }
-    DayflowAuthManager.shared.setPendingReferralCode(code)
-  }
-
 }

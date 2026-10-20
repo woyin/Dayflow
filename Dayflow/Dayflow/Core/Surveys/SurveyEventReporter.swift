@@ -161,10 +161,7 @@ final class SurveyEventReporter {
 /// Where the survey endpoints live, and how their JSON is shaped.
 enum SurveyBackend {
   static func url(path: String) -> URL? {
-    guard
-      let base = DayflowBackendConfiguration.endpoint(
-        legacySavedEndpoint: DayflowEndpointPreferences.load())
-    else { return nil }
+    guard let base = DayflowBackendConfiguration.endpoint() else { return nil }
     return URL(string: base + path)
   }
 

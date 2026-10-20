@@ -66,140 +66,14 @@ struct SupportChatPalette: Equatable {
   }
 }
 
-enum SupportChatContext: Equatable {
-  case support
-  case flowWaitlist(email: String, accountID: String? = nil)
-
-  var isFlowWaitlist: Bool {
-    if case .flowWaitlist = self { return true }
-    return false
-  }
-
-  var email: String? {
-    guard case .flowWaitlist(let email, _) = self else { return nil }
-    return email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-  }
-
-  var accountID: String? {
-    guard case .flowWaitlist(_, let accountID) = self,
-      let normalizedID = accountID?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !normalizedID.isEmpty
-    else { return nil }
-    return normalizedID
-  }
-
-  var sessionKey: String {
-    guard let email else { return "support" }
-    guard let accountID else { return "signed-out:\(email)" }
-    return "account:\(accountID.utf8.count):\(accountID):\(email)"
-  }
-}
-
-/// Retains each conversation independently so Flow never shares a support ticket.
+/// Retains the support conversation for the life of the app.
 @MainActor
 final class SupportChatSession {
-  static let shared = SupportChatSession(context: .support)
-  private static var flowWaitlistSessions: [String: SupportChatSession] = [:]
-  private static var activeFlowWaitlistSession: SupportChatSession?
-  private static var flowAccountObserver: AnyCancellable?
+  static let shared = SupportChatSession()
 
-  static func startFlowWaitlistMonitoring() {
-    guard flowAccountObserver == nil else { return }
-    // Published properties send before their values change; read the settled
-    // account on the next run-loop turn.
-    flowAccountObserver = DayflowAuthManager.shared.objectWillChange
-      .receive(on: RunLoop.main)
-      .sink { refreshFlowWaitlistMonitoring() }
-    refreshFlowWaitlistMonitoring()
-  }
-
-  static func refreshFlowWaitlistMonitoring() {
-    let auth = DayflowAuthManager.shared
-    guard auth.hasLoadedStoredSession, !auth.isRestoringStoredSession else { return }
-    let registration = FlowWaitlistRegistration()
-    let shouldMonitor =
-      !auth.flowEnabled
-      && registration.belongsTo(userID: auth.user?.id, email: auth.user?.email)
-    let nextSession =
-      shouldMonitor
-      ? flowWaitlist(email: registration.email, accountID: registration.chatContext.accountID) : nil
-    guard activeFlowWaitlistSession !== nextSession else { return }
-    if activeFlowWaitlistSession != nil || nextSession == nil {
-      NotificationService.shared.clearFlowWaitlistReplyNotification()
-    }
-    if activeFlowWaitlistSession !== flowSupportSession { activeFlowWaitlistSession?.stop() }
-    activeFlowWaitlistSession = nextSession
-    let unreadCount = nextSession?.replyState.unreadCount ?? 0
-    NotificationBadgeManager.shared.setFlowWaitlistUnreadCount(
-      unreadCount,
-      sessionKey: nextSession?.context.sessionKey
-    )
-    nextSession?.start()
-  }
-
-  // MARK: Flow support
-
-  /// The conversation behind Flow's Support button, watched while Flow is
-  /// open so the page can show a dot when a reply is waiting.
-  private static var flowSupportSession: SupportChatSession?
-
-  /// Someone who joined the waitlist on this Mac keeps the conversation they
-  /// started there; anyone else gets one keyed to their account.
-  static func flowSupportContext() -> SupportChatContext {
-    let user = DayflowAuthManager.shared.user
-    let registration = FlowWaitlistRegistration()
-    if registration.belongsTo(userID: user?.id, email: user?.email) {
-      return registration.chatContext
-    }
-    guard let user else { return .support }
-    return .flowWaitlist(email: user.email, accountID: user.id)
-  }
-
-  static func session(for context: SupportChatContext) -> SupportChatSession {
-    switch context {
-    case .support: return .shared
-    case .flowWaitlist(let email, let accountID):
-      return .flowWaitlist(email: email, accountID: accountID)
-    }
-  }
-
-  static func startFlowSupportMonitoring() {
-    let context = flowSupportContext()
-    guard context.isFlowWaitlist else { return }
-    let next = session(for: context)
-    if flowSupportSession !== next, flowSupportSession !== activeFlowWaitlistSession {
-      flowSupportSession?.stop()
-    }
-    flowSupportSession = next
-    next.start()
-  }
-
-  static var flowSupportUnreadCount: Int {
-    flowSupportSession?.replyState.unreadCount ?? 0
-  }
-
-  static func flowWaitlist(email: String, accountID: String? = nil) -> SupportChatSession {
-    let context = SupportChatContext.flowWaitlist(email: email, accountID: accountID)
-    if let session = flowWaitlistSessions[context.sessionKey] { return session }
-    let session = SupportChatSession(context: context)
-    flowWaitlistSessions[context.sessionKey] = session
-    return session
-  }
-
-  let context: SupportChatContext
-  let websiteDataStore: WKWebsiteDataStore
+  let websiteDataStore = WKWebsiteDataStore.default()
   lazy var coordinator = SupportChatWebView.Coordinator(session: self, onEvent: { _ in })
   lazy var webView = SupportChatWebView.makeWebView(session: self)
-  /// Flow's support overlay and the waitlist screen share one conversation
-  /// and page, so each sets its own composer placeholder when it shows.
-  func setMessagePlaceholder(_ text: String) {
-    guard let data = try? JSONEncoder().encode(text),
-      let literal = String(data: data, encoding: .utf8)
-    else { return }
-    webView.evaluateJavaScript(
-      "var t = document.getElementById('text'); if (t) { t.placeholder = \(literal); }")
-  }
-
   private var timer: Timer?
   private var observers: [NSObjectProtocol] = []
   private var chatVisible = false
@@ -208,33 +82,9 @@ final class SupportChatSession {
   private var failed = false
   private let defaults = UserDefaults.standard
 
-  private init(context: SupportChatContext) {
-    self.context = context
-    if let email = context.email {
-      // PostHog keys conversations by project token, so a separate data store
-      // keeps Support and other accounts out of this conversation.
-      let key = "flowWaitlistChatDataStores"
-      var identifiers = UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
-      let storedID =
-        identifiers[context.sessionKey]
-        ?? (context.accountID == nil ? identifiers[email] : nil)
-      let identifier = storedID.flatMap(UUID.init(uuidString:)) ?? UUID()
-      identifiers[context.sessionKey] = identifier.uuidString
-      // Only the signed-out scope may inherit the original anonymous conversation.
-      if context.accountID == nil { identifiers.removeValue(forKey: email) }
-      UserDefaults.standard.set(identifiers, forKey: key)
-      websiteDataStore = WKWebsiteDataStore(forIdentifier: identifier)
-    } else {
-      websiteDataStore = .default()
-    }
-  }
+  private init() {}
 
-  var pageURL: URL {
-    URL(
-      string: context.isFlowWaitlist
-        ? "https://www.dayflow.so/flow-waitlist-chat" : "https://www.dayflow.so/support-chat"
-    )!
-  }
+  var pageURL: URL { URL(string: "https://www.dayflow.so/support-chat")! }
 
   func start() {
     guard timer == nil else { return }
@@ -324,33 +174,14 @@ final class SupportChatSession {
   private var replyState: ChatReplyState {
     ChatReplyState(
       defaults: defaults,
-      keyPrefix: context.isFlowWaitlist ? "flowWaitlist.\(context.sessionKey)" : "support"
+      keyPrefix: "support"
     )
   }
 
   func receiveReplies(_ body: [String: Any]) {
-    if Self.flowSupportSession === self, Self.activeFlowWaitlistSession !== self {
-      // Flow's own Support button: only the dot on the page, no Dock badge.
-      _ = replyState.receive(
-        unreadCount: body["unread"] as? Int ?? 0, latestReplyID: body["latestID"] as? String)
-      FlowSessionMirror.shared.webBridge?.sendEvent(
-        "supportUnread", payload: ["count": replyState.unreadCount])
-      return
-    }
-    guard !context.isFlowWaitlist || Self.activeFlowWaitlistSession === self else { return }
     let shouldNotify = replyState.receive(
       unreadCount: body["unread"] as? Int ?? 0, latestReplyID: body["latestID"] as? String)
     let unread = replyState.unreadCount
-    if context.isFlowWaitlist {
-      NotificationBadgeManager.shared.setFlowWaitlistUnreadCount(
-        unread, sessionKey: context.sessionKey)
-      if unread == 0 {
-        NotificationService.shared.clearFlowWaitlistReplyNotification()
-      } else if shouldNotify {
-        NotificationService.shared.notifyFlowWaitlistReply(sessionKey: context.sessionKey)
-      }
-      return
-    }
     NotificationBadgeManager.shared.setSupportUnreadCount(unread)
     if unread == 0 {
       NotificationService.shared.clearSupportReplyNotification()
@@ -369,20 +200,17 @@ struct SupportChatWebView: NSViewRepresentable {
   }
 
   let palette: SupportChatPalette
-  let context: SupportChatContext
   let onEvent: (Event) -> Void
 
   init(
     palette: SupportChatPalette,
-    context: SupportChatContext = .support,
     onEvent: @escaping (Event) -> Void
   ) {
     self.palette = palette
-    self.context = context
     self.onEvent = onEvent
   }
 
-  private var session: SupportChatSession { .session(for: context) }
+  private var session: SupportChatSession { .shared }
 
   func makeCoordinator() -> Coordinator {
     session.coordinator.onEvent = onEvent
@@ -404,7 +232,7 @@ struct SupportChatWebView: NSViewRepresentable {
     configuration.userContentController.add(coordinator, name: "support")
     configuration.userContentController.addUserScript(
       WKUserScript(
-        source: Self.configScript(palette: .light, context: session.context),
+        source: Self.configScript(palette: .light),
         injectionTime: .atDocumentStart,
         forMainFrameOnly: true
       )
@@ -436,9 +264,7 @@ struct SupportChatWebView: NSViewRepresentable {
   }
 
   /// Everything the page needs before posthog-js loads: keys, distinct ID, and theme.
-  private static func configScript(palette: SupportChatPalette, context: SupportChatContext)
-    -> String
-  {
+  private static func configScript(palette: SupportChatPalette) -> String {
     let info = Bundle.main.infoDictionary
     var config: [String: Any] = [
       "token": info?["PHPostHogApiKey"] as? String ?? "",
@@ -447,33 +273,22 @@ struct SupportChatWebView: NSViewRepresentable {
       "backendURL": DayflowBackendConfiguration.endpoint() ?? "",
       "palette": palette.values,
       "language": Bundle.main.preferredLocalizations.first ?? "en",
-      "flowWaitlist": context.isFlowWaitlist,
-      "email": context.email ?? "",
       "strings": [
         "email": String(localized: "Your email"),
         "emailPlaceholder": String(localized: "so we can reply if you close the app"),
-        "messagePlaceholder": context.isFlowWaitlist
-          ? String(localized: "Who are you, and how would you use Flow?")
-          // The image hint is its own string so the original keeps its translations.
-          : String(localized: "What's going on? Bugs, ideas, confusion — all welcome.") + " "
-            + String(localized: "Paste or drop screenshots here too."),
+        // The image hint is its own string so the original keeps its translations.
+        "messagePlaceholder": String(localized: "What's going on? Bugs, ideas, confusion — all welcome.")
+          + " " + String(localized: "Paste or drop screenshots here too."),
         "debug": String(localized: "Attach debug logs"),
         "send": String(localized: "Send"),
         "you": String(localized: "You"),
-        "greeting": context.isFlowWaitlist
-          ? String(
-            localized:
-              "You're on the Flow waitlist! Tell us a little about yourself and what you'd like to use Flow for. The more detail you share, the sooner we can review your request and get you off the waitlist. Our team will reply here."
-          )
-          : String(
-            localized:
-              "Hey there! Found a bug, have an idea, or just confused about something? Drop it here and a real person on the Dayflow team will get back to you in this chat."
-          ),
+        "greeting": String(
+          localized:
+            "Hey there! Found a bug, have an idea, or just confused about something? Drop it here and a real person on the Dayflow team will get back to you in this chat."
+        ),
         "emailRequired": String(localized: "Add your email so we can reply."),
         "unavailable": String(localized: "Support is not available right now."),
-        "sent": context.isFlowWaitlist
-          ? String(localized: "Sent. Our team will reply here.")
-          : String(localized: "Sent. Replies show up here and in your inbox."),
+        "sent": String(localized: "Sent. Replies show up here and in your inbox."),
         "sendFailed": String(localized: "Couldn't send. Try again."),
         "rateLimited": String(localized: "Slow down a little — try again in a minute."),
         "dropHint": String(localized: "Drop images to attach"),
@@ -531,8 +346,7 @@ struct SupportChatWebView: NSViewRepresentable {
         session?.didBecomeUnavailable()
         let reason = body["reason"] as? String ?? "unknown"
         AnalyticsService.shared.capture(
-          session?.context.isFlowWaitlist == true
-            ? "flow_waitlist_chat_unavailable" : "support_chat_unavailable",
+          "support_chat_unavailable",
           ["reason": reason]
         )
         onEvent(.unavailable(reason: reason))
@@ -543,8 +357,7 @@ struct SupportChatWebView: NSViewRepresentable {
       case "sent":
         Task { await NotificationService.shared.requestPermission() }
         AnalyticsService.shared.capture(
-          session?.context.isFlowWaitlist == true
-            ? "flow_waitlist_message_sent" : "support_message_sent",
+          "support_message_sent",
           [
             "has_debug_log": body["hasDebugLog"] as? Bool ?? false,
             "new_ticket": body["newTicket"] as? Bool ?? false,
@@ -552,7 +365,6 @@ struct SupportChatWebView: NSViewRepresentable {
         )
 
       case "requestDebugLog":
-        guard session?.context.isFlowWaitlist != true else { return }
         Task.detached(priority: .userInitiated) {
           let snapshot = DebugLogSnapshot.makeCurrent()
           await MainActor.run {
@@ -833,14 +645,6 @@ private enum SupportChatPage {
       };
 
       var strings = config.strings;
-      var isFlowWaitlist = config.flowWaitlist === true;
-      var FLOW_WAITLIST_PREFIX = "[Flow waitlist]\n\n";
-      if (isFlowWaitlist) {
-        document.getElementById("email-row").style.display = "none";
-        document.getElementById("debug-toggle").style.display = "none";
-        el.debug.checked = false;
-        el.debug.disabled = true;
-      }
       document.documentElement.lang = config.language || "en";
       document.querySelector('label[for="email"]').textContent = strings.email;
       el.email.placeholder = strings.emailPlaceholder;
@@ -913,9 +717,6 @@ private enum SupportChatPage {
 
         var isUser = message.author_type === "customer";
         var content = message.content || "";
-        if (isFlowWaitlist && isUser && content.indexOf(FLOW_WAITLIST_PREFIX) === 0) {
-          content = content.slice(FLOW_WAITLIST_PREFIX.length);
-        }
 
         var images = content.match(IMAGE_URL) || [];
         var bubble = document.createElement("div");
@@ -1061,11 +862,7 @@ private enum SupportChatPage {
       // ---- Email ---------------------------------------------------------------
 
       var EMAIL_KEY = "dayflow.support.email";
-      if (isFlowWaitlist) {
-        el.email.value = config.email || "";
-      } else {
-        try { el.email.value = localStorage.getItem(EMAIL_KEY) || ""; } catch (e) {}
-      }
+      try { el.email.value = localStorage.getItem(EMAIL_KEY) || ""; } catch (e) {}
       el.email.addEventListener("change", function () {
         try { localStorage.setItem(EMAIL_KEY, el.email.value.trim()); } catch (e) {}
       });
@@ -1132,7 +929,7 @@ private enum SupportChatPage {
         updateSendEnabled();
         showError("");
 
-        var attachDebug = !isFlowWaitlist && el.debug.checked;
+        var attachDebug = el.debug.checked;
         var traits = { email: email };
 
         var log = attachDebug ? await requestDebugLog() : null;
@@ -1140,8 +937,7 @@ private enum SupportChatPage {
 
         var hadTicket = !!posthog.conversations.getCurrentTicketId();
         try {
-          var outboundText = isFlowWaitlist && !hadTicket ? FLOW_WAITLIST_PREFIX + text : text;
-          var response = await posthog.conversations.sendMessage(outboundText, traits);
+          var response = await posthog.conversations.sendMessage(text, traits);
           if (!response) throw new Error(strings.unavailable);
           if (attachDebug) sendDebugLogEvent(log, response);
           el.text.value = "";

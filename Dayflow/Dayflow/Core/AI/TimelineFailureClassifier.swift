@@ -13,7 +13,6 @@ import Foundation
 
 enum TimelineFailureKind: String {
   // Actionable: the user has to do something before timelines resume.
-  case dayflowProRequired = "dayflow_pro_required"
   case providerLoginExpired = "provider_login_expired"
   case cliNotInstalled = "cli_not_installed"
   case cliOutdated = "cli_outdated"
@@ -35,11 +34,10 @@ enum TimelineFailureKind: String {
 
 enum TimelineFailureToastDestination: String {
   case providers
-  case account
 }
 
 struct TimelineFailureToastContent {
-  /// The provider the card is about ("Claude", "ChatGPT", "Gemini", "Dayflow"...),
+  /// The provider the card is about ("Claude", "ChatGPT", "Gemini"...),
   /// used to pick the logo.
   var providerName = ""
   let title: String
@@ -67,10 +65,6 @@ struct TimelineFailureClassification {
     let catchUp = "Dayflow will catch up automatically once that's done."
 
     switch kind {
-    case .dayflowProRequired:
-      return
-        "Your Dayflow Pro plan has ended. Renew it or switch to another provider in Settings. \(catchUp)"
-
     case .providerLoginExpired:
       if let fix = signInFix(for: provider) {
         return "\(provider) is signed out. \(fix.cardSentence) \(catchUp)"
@@ -138,21 +132,12 @@ struct TimelineFailureClassification {
   func toastContent(fallbackProviderLabel: String?) -> TimelineFailureToastContent? {
     let provider = resolvedProvider(fallbackProviderLabel)
     var content = baseToastContent(provider: provider)
-    content?.providerName = kind == .dayflowProRequired ? "Dayflow" : provider
+    content?.providerName = provider
     return content
   }
 
   private func baseToastContent(provider: String) -> TimelineFailureToastContent? {
     switch kind {
-    case .dayflowProRequired:
-      return TimelineFailureToastContent(
-        title: "Your Dayflow Pro plan ended",
-        body: "Renew to keep your timeline going, or switch to a free provider like Gemini.",
-        steps: [],
-        command: nil,
-        destination: .account
-      )
-
     case .providerLoginExpired:
       guard let fix = signInFix(for: provider) else {
         return TimelineFailureToastContent(
@@ -346,7 +331,6 @@ struct TimelineFailureClassification {
     case "chatgpt", "codex": return "ChatGPT"
     case "claude": return "Claude"
     case "local", "ollama": return "Ollama/LM Studio"
-    case "dayflow": return "Dayflow"
     default: return label
     }
   }
@@ -392,7 +376,6 @@ enum TimelineFailureClassifier {
         "invalid duration",
       ]
     ),
-    (.dayflowProRequired, ["dayflow pro is required"]),
     (
       .providerLoginExpired,
       [

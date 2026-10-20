@@ -12,7 +12,6 @@ final class ProvidersSettingsViewModelTests: XCTestCase {
     "localSetupComplete",
     "chatGPTPromptOverrides",
     "claudePromptOverrides",
-    "dayflowProviderEndpointV2",
     "chatgptSetupComplete",
     "claudeSetupComplete",
     "geminiSelectedModel_v3",

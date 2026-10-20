@@ -3,12 +3,9 @@
 //  Dayflow
 //
 
-import AVFoundation
 import SwiftUI
 
 enum OnboardingPrototypeStep: Int, CaseIterable, Identifiable {
-  case introVideo
-  case roleSelection
   case preferences
   case chooseProvider
   case placeholder
@@ -17,10 +14,6 @@ enum OnboardingPrototypeStep: Int, CaseIterable, Identifiable {
 
   var analyticsName: String {
     switch self {
-    case .introVideo:
-      return "intro_video"
-    case .roleSelection:
-      return "role_selection"
     case .preferences:
       return "preferences"
     case .chooseProvider:
@@ -49,7 +42,7 @@ struct OnboardingPrototypeFlow: View {
   @State private var hasTrackedCompletion = false
 
   init(
-    initialStep: OnboardingPrototypeStep = .introVideo,
+    initialStep: OnboardingPrototypeStep = .preferences,
     flowVariant: String = "prototype_v1",
     entryPoint: String = "preview"
   ) {
@@ -64,45 +57,6 @@ struct OnboardingPrototypeFlow: View {
         .ignoresSafeArea()
 
       switch currentStep {
-      case .introVideo:
-        OnboardingPrototypeVideoIntroStep(
-          videoName: "DayflowOnboarding",
-          onPlaybackStarted: {
-            OnboardingPrototypeAnalytics.trackVideoStarted(
-              step: .introVideo,
-              flowID: flowID,
-              flowVariant: flowVariant,
-              assetName: "DayflowOnboarding.mp4"
-            )
-          },
-          onPlaybackCompleted: { reason in
-            OnboardingPrototypeAnalytics.trackVideoCompleted(
-              step: .introVideo,
-              flowID: flowID,
-              flowVariant: flowVariant,
-              assetName: "DayflowOnboarding.mp4",
-              completionReason: reason
-            )
-            advance(from: .introVideo, method: "video_\(reason)")
-          }
-        )
-
-      case .roleSelection:
-        OnboardingPrototypeRoleSelectionStep(
-          onContinue: { selectedRole in
-            OnboardingPrototypeAnalytics.trackStepCompleted(
-              step: .roleSelection,
-              flowID: flowID,
-              flowVariant: flowVariant,
-              advanceMethod: "continue_button",
-              extraProps: ["selected_role": selectedRole]
-            )
-            if let nextStep = OnboardingPrototypeStep.roleSelection.next {
-              currentStep = nextStep
-            }
-          }
-        )
-
       case .preferences:
         OnboardingPrototypePreferencesStep(
           onContinue: { hasPaidAI in
@@ -121,8 +75,6 @@ struct OnboardingPrototypeFlow: View {
 
       case .chooseProvider:
         OnboardingPrototypeChooseProviderStep(
-          flowID: flowID,
-          flowVariant: flowVariant,
           onSelect: { provider in
             OnboardingPrototypeAnalytics.trackStepCompleted(
               step: .chooseProvider,
@@ -139,9 +91,6 @@ struct OnboardingPrototypeFlow: View {
 
       case .placeholder:
         OnboardingPrototypePlaceholderStep(
-          onReplayVideo: {
-            currentStep = .introVideo
-          },
           onFinish: {
             advance(from: .placeholder, method: "finish_button")
           }
@@ -204,7 +153,6 @@ struct OnboardingPrototypeFlow: View {
 // MARK: - Placeholder Step
 
 private struct OnboardingPrototypePlaceholderStep: View {
-  let onReplayVideo: () -> Void
   let onFinish: () -> Void
 
   var body: some View {
@@ -215,7 +163,7 @@ private struct OnboardingPrototypePlaceholderStep: View {
           .foregroundColor(.black.opacity(0.9))
 
         Text(
-          "The intro video, role-selection screen, and preferences screen are now wired up. We can keep replacing the remaining placeholders step by step without touching production onboarding yet."
+          "The preferences screen is now wired up. We can keep replacing the remaining placeholders step by step without touching production onboarding yet."
         )
         .font(.custom("Figtree", size: 17))
         .foregroundColor(.black.opacity(0.65))
@@ -224,24 +172,6 @@ private struct OnboardingPrototypePlaceholderStep: View {
       }
 
       HStack(spacing: 16) {
-        DayflowSurfaceButton(
-          action: onReplayVideo,
-          content: {
-            Text("Replay video")
-              .font(.custom("Figtree", size: 15))
-              .fontWeight(.semibold)
-          },
-          background: .white,
-          foreground: Color(red: 0.25, green: 0.17, blue: 0),
-          borderColor: Color(hex: "B6B6B6"),
-          cornerRadius: 200,
-          horizontalPadding: 12,
-          verticalPadding: 0,
-          minWidth: 170,
-          fixedHeight: 36,
-          showShadow: false
-        )
-
         DayflowSurfaceButton(
           action: onFinish,
           content: {
@@ -310,32 +240,6 @@ enum OnboardingPrototypeAnalytics {
     capture("onboarding_step_completed", props)
   }
 
-  static func trackVideoStarted(
-    step: OnboardingPrototypeStep,
-    flowID: String,
-    flowVariant: String,
-    assetName: String
-  ) {
-    var props = stepProps(step: step, flowID: flowID, flowVariant: flowVariant)
-    props["asset_name"] = assetName
-    props["is_muted"] = true
-    props["auto_advance"] = true
-    capture("onboarding_video_started", props)
-  }
-
-  static func trackVideoCompleted(
-    step: OnboardingPrototypeStep,
-    flowID: String,
-    flowVariant: String,
-    assetName: String,
-    completionReason: String
-  ) {
-    var props = stepProps(step: step, flowID: flowID, flowVariant: flowVariant)
-    props["asset_name"] = assetName
-    props["completion_reason"] = completionReason
-    capture("onboarding_video_completed", props)
-  }
-
   static func trackFlowCompleted(
     flowID: String,
     flowVariant: String,
@@ -351,67 +255,6 @@ enum OnboardingPrototypeAnalytics {
     )
   }
 
-  static func trackDayflowProSelected(
-    flowID: String,
-    flowVariant: String,
-    selectionStage: String
-  ) {
-    capture(
-      "dayflow_pro_selected",
-      dayflowProProps(
-        step: nil,
-        flowID: flowID,
-        flowVariant: flowVariant,
-        extraProps: ["selection_stage": selectionStage]
-      )
-    )
-  }
-
-  static func trackDayflowProStepViewed(
-    step: DayflowProOnboardingStep,
-    flowID: String,
-    flowVariant: String
-  ) {
-    screen(
-      "dayflow_pro_\(step.analyticsName)",
-      dayflowProProps(
-        step: step,
-        flowID: flowID,
-        flowVariant: flowVariant
-      )
-    )
-    capture(
-      "dayflow_pro_onboarding_step_viewed",
-      dayflowProProps(
-        step: step,
-        flowID: flowID,
-        flowVariant: flowVariant
-      )
-    )
-  }
-
-  static func trackDayflowProAPIOutcome(
-    _ eventName: String,
-    action: String,
-    result: DayflowAuthActionResult,
-    step: DayflowProOnboardingStep,
-    flowID: String,
-    flowVariant: String
-  ) {
-    capture(
-      eventName,
-      dayflowProProps(
-        step: step,
-        flowID: flowID,
-        flowVariant: flowVariant,
-        extraProps: result.analyticsProps.merging(
-          ["action": action],
-          uniquingKeysWith: { _, new in new }
-        )
-      )
-    )
-  }
-
   private static func stepProps(
     step: OnboardingPrototypeStep,
     flowID: String,
@@ -424,24 +267,6 @@ enum OnboardingPrototypeAnalytics {
       "step_index": step.rawValue + 1,
       "step_count": OnboardingPrototypeStep.allCases.count,
     ]
-  }
-
-  private static func dayflowProProps(
-    step: DayflowProOnboardingStep?,
-    flowID: String,
-    flowVariant: String,
-    extraProps: [String: Any] = [:]
-  ) -> [String: Any] {
-    var props: [String: Any] = [
-      "flow_id": flowID,
-      "flow_variant": flowVariant,
-      "surface": "onboarding_dayflow_pro",
-    ]
-    if let step {
-      props["dayflow_pro_step"] = step.analyticsName
-    }
-    extraProps.forEach { props[$0.key] = $0.value }
-    return props
   }
 
   private static func capture(_ name: String, _ props: [String: Any]) {
@@ -460,11 +285,6 @@ enum OnboardingPrototypeAnalytics {
     .frame(
       width: 900, height: 600
     )
-}
-
-#Preview("Onboarding Prototype Role Selection") {
-  OnboardingPrototypeFlow(initialStep: .roleSelection)
-    .frame(width: 1200, height: 800)
 }
 
 #Preview("Onboarding Prototype Preferences") {

@@ -14,7 +14,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     case daily(day: String?)
     case weekly
     case support
-    case flow
     case timeline
   }
 
@@ -52,7 +51,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   private var heartbeatTimer: Timer?
   private var appLaunchDate: Date?
   private var foregroundStartTime: Date?
-  private var referralUsageStartedAt: Date?
   private var analyticsConfigured = false
 
   override init() {
@@ -64,9 +62,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Block termination by default; only specific flows enable it.
     AppDelegate.allowTermination = false
     applySavedDockIconPreference()
-    #if DEBUG
-      if #available(macOS 15.0, *) { FlowDebugRecorder.shared.install() }
-    #endif
 
     // Configure crash reporting (Sentry) from shared telemetry preference.
     SentryHelper.setEnabled(AnalyticsService.shared.isOptedIn)
@@ -178,31 +173,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Start Daily and Weekly notifications and retire legacy Journal reminders
     NotificationService.shared.start()
-    DayflowAuthManager.shared.loadStoredSessionIfNeeded()
+    LegacyAccountCleanup.run()
     SupportChatSession.shared.start()
-    SupportChatSession.startFlowWaitlistMonitoring()
 
     // Start daily recap generation scheduler (checks every 5 minutes)
     DailyRecapScheduler.shared.start()
-
-    // Flow desktop overlay (creature toasts/nudges) tracks the session mirror
-    FlowOverlayController.shared.start()
-    FlowEarlyBirdController.shared.start()
 
     // Observe recording state
     analyticsSub = AppState.shared.$isRecording
       .removeDuplicates()
       .sink { enabled in
         let reason = AppState.shared.consumePendingRecordingAnalyticsReason() ?? "unknown"
-        self.trackReferralUsageRecordingChange(enabled: enabled)
         guard reason != "auto" else { return }
         AnalyticsService.shared.capture(
           "recording_toggled", ["enabled": enabled, "reason": reason])
         AnalyticsService.shared.setPersonProperties(["recording_enabled": enabled])
       }
-    if AppState.shared.isRecording {
-      referralUsageStartedAt = Date()
-    }
 
     powerObserver = NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.willPowerOffNotification,
@@ -336,7 +322,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       analyticsPreferenceObserver = nil
     }
     DailyRecapScheduler.shared.stop()
-    flushReferralUsage(reason: "terminate")
     // If onboarding not completed, mark abandoned with last step
     let didOnboard = UserDefaults.standard.bool(forKey: "didOnboard")
     if !didOnboard {
@@ -461,40 +446,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     props.merge(ScreenCaptureMonitor.shared.heartbeatPropertiesAndReset()) { _, new in new }
     props["launch_at_login"] = LaunchAtLoginManager.shared.statusName
     AnalyticsService.shared.capture("app_heartbeat", props)
-    flushReferralUsage(reason: "heartbeat")
     // Re-read so the next heartbeat reflects changes made in System Settings.
     LaunchAtLoginManager.shared.refreshStatusInBackground()
     UserDefaults.standard.set(Date(), forKey: Self.lastRunSeenAtKey)
-  }
-
-  private func trackReferralUsageRecordingChange(enabled: Bool) {
-    if enabled {
-      referralUsageStartedAt = Date()
-    } else {
-      flushReferralUsage(reason: "recording_stopped")
-    }
-  }
-
-  private func flushReferralUsage(reason: String) {
-    guard AppState.shared.isRecording || reason != "heartbeat" else { return }
-    guard let startedAt = referralUsageStartedAt else {
-      if AppState.shared.isRecording {
-        referralUsageStartedAt = Date()
-      }
-      return
-    }
-
-    let seconds = Int(Date().timeIntervalSince(startedAt).rounded())
-    guard seconds >= 60 else { return }
-
-    referralUsageStartedAt = AppState.shared.isRecording ? Date() : nil
-    let idempotencyKey = "mac-\(reason)-\(Int(startedAt.timeIntervalSince1970))-\(seconds)"
-    Task {
-      await DayflowAuthManager.shared.reportReferralUsage(
-        seconds: seconds,
-        idempotencyKey: idempotencyKey
-      )
-    }
   }
 
   private func updateCPUMonitoring(analyticsEnabled: Bool) {

@@ -47,7 +47,6 @@ struct DailyView: View {
   let betaNoticeCopy =
     String(
       localized: "Daily is a new way to visualize your day and turn it into a standup update fast.")
-  let priorStandupHistoryLimit = 3
   static let maxDateTitleWidth: CGFloat = {
     let referenceText = "Wednesday, September 30"
     let font = NSFont(name: "InstrumentSerif-Regular", size: 26) ?? NSFont.systemFont(ofSize: 26)

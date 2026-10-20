@@ -31,9 +31,9 @@ This document lists manual events, properties, and code locations. All events re
 
 ## Onboarding
 - onboarding_started
-  - file: Views/Onboarding/OnboardingFlow.swift (intro video appear)
+  - file: Views/Onboarding/OnboardingFlow.swift (first onboarding step)
 - onboarding_step_completed
-  - props: `step: intro_video|role_selection|referral|llm_selection|llm_setup|screen_recording|personal_goal|completion` (download_reason, preferences, categories and category_colors were removed in onboarding schema v6)
+  - props: `step: referral|llm_selection|llm_setup|screen_recording|personal_goal|completion` (download_reason, preferences, categories and category_colors were removed in schema v6; the intro video in v7; role selection in v8)
   - file: Views/Onboarding/OnboardingFlow.swift
 - onboarding_download_reason (retired in onboarding schema v6; historical data only)
   - props: `reasons: string[] (automatic_log|proof_of_work|cut_distractions|productive_focused|automated_manual_tracking|open_source_private|other)`, `surface: onboarding_download_reason`, `other_detail?: string`
@@ -44,17 +44,8 @@ This document lists manual events, properties, and code locations. All events re
   - props: `goal: string` (free text, max 2,000 chars, empty when skipped), `character_count: int`, `skipped: bool`, `surface: onboarding_personal_goal`
   - file: Views/Onboarding/OnboardingFlow.swift
 - llm_provider_selected
-  - props: `provider: dayflow|gemini|chat_cli|openai_compatible|ollama`, `provider_id: dayflow|gemini|chatgpt|claude|openai_compatible|local`, `local_engine?: ollama|lmstudio|custom`
+  - props: `provider: gemini|chat_cli|openai_compatible|ollama`, `provider_id: gemini|chatgpt|claude|openai_compatible|local`, `local_engine?: ollama|lmstudio|custom`
   - file: Views/Onboarding/OnboardingFlow.swift
-- dayflow_pro_selected
-  - props: `surface: onboarding_dayflow_pro`, `flow_id: string`, `flow_variant: string`, `has_paid_ai: bool`, `selection_stage: started_sign_in|continued`
-  - file: Views/Onboarding/Prototype/OnboardingPrototypeFlow.swift
-- dayflow_pro_onboarding_step_viewed
-  - props: `surface: onboarding_dayflow_pro`, `flow_id: string`, `flow_variant: string`, `has_paid_ai: bool`, `dayflow_pro_step: email|code|referral_code|free_month_active|trial_offer|trial_active`
-  - file: Views/Onboarding/Prototype/OnboardingPrototypeFlow.swift
-- dayflow_pro_auth_code_requested / dayflow_pro_auth_code_verified / dayflow_pro_referral_code_submitted / dayflow_pro_trial_started
-  - props: `surface: onboarding_dayflow_pro`, `flow_id: string`, `flow_variant: string`, `has_paid_ai: bool`, `dayflow_pro_step: string`, `action: auth_code_request|auth_code_verify|referral_code_submit|trial_start`, `outcome: success|failure`, `endpoint?: string`, `http_status?: int`, `error_type?: invalid_email|invalid_code|missing_email|invalid_referral_code|not_signed_in|endpoint_not_found|bad_request|unauthorized|conflict|server_error|http_error|timeout|network_error|non_http_response|request_in_progress|client_error|unknown_error`, `backend_detail_bucket?: not_found|referral_code_not_found|own_referral_code|referral_already_used|trial_already_used|other_backend_error`
-  - file: Views/Onboarding/Prototype/OnboardingPrototypeFlow.swift, System/DayflowAuthManager.swift
 - screen_permission_granted / screen_permission_denied
   - file: Views/Onboarding/ScreenRecordingPermissionView.swift
 - connection_test_started / connection_test_succeeded / connection_test_failed
@@ -123,13 +114,13 @@ This document lists manual events, properties, and code locations. All events re
   - props: `from: string`, `to: string`
   - file: Views/UI/SettingsView.swift
 - provider_setup_completed
-  - props: `provider: dayflow|gemini|chat_cli|openai_compatible|ollama`, `provider_id: dayflow|gemini|chatgpt|claude|openai_compatible|local`, provider-specific non-secret configuration metadata
+  - props: `provider: gemini|chat_cli|openai_compatible|ollama`, `provider_id: gemini|chatgpt|claude|openai_compatible|local`, provider-specific non-secret configuration metadata
   - file: Views/UI/Settings/ProvidersSettingsViewModel.swift
 - provider_primary_updated / provider_secondary_updated / provider_backup_updated
   - props: exact provider IDs in `provider_id` and role-specific fields (`provider_id: none` when clearing backup); `swapped_with_secondary?: bool`, `mode?: set|swap_with_primary`
   - file: Views/UI/Settings/ProvidersSettingsViewModel.swift
 - llm_provider_routing_save_failed
-  - props: `provider_id: dayflow|gemini|chatgpt|claude|openai_compatible|local`, `surface: onboarding`
+  - props: `provider_id: gemini|chatgpt|claude|openai_compatible|local`, `surface: onboarding`
   - file: Views/Onboarding/OnboardingFlow.swift
 
 ## Navigation & Timeline
@@ -251,17 +242,12 @@ This document lists manual events, properties, and code locations. All events re
 
 ## AI / LLM / Analysis
 - analysis_job_started
-  - props: compatibility family in `provider: gemini|ollama|dayflow|chat_cli|openai_compatible|unknown`, exact provider in `provider_id`
+  - props: compatibility family in `provider: gemini|ollama|chat_cli|openai_compatible|unknown`, exact provider in `provider_id`
   - file: App/AppDelegate.swift
 - analysis_batch_started / analysis_batch_completed / analysis_batch_failed
   - props: compatibility provider family in `llm_provider`, exact primary provider in `provider_id`, exact effective provider in `effective_provider_id` on completion, and exact configured backup in `backup_provider_id` on failure
   - privacy: failures include a classified failure kind, never a raw error message
   - file: Core/AI/LLMService.swift
-- backend_timeline_request_started / backend_timeline_request_succeeded / backend_timeline_request_failed
-  - props: `timeline_request_id`, `endpoint_host`, screenshot/card/category counts, `batch_id`; success adds `latency_ms`, byte sizes, `cards_count`, `observations_count`, `provider`, `model`; failure adds `error_domain`, `error_code`, `http_status`
-  - notes: one-step timeline generation on Dayflow Pro (screenshots to cards in a single backend call)
-  - privacy: counts and timings only, never screenshot or card content
-  - file: Core/AI/DayflowBackendProvider.swift
 - timeline_one_step_fallback
   - props: `batch_id`, `provider`, `provider_id`, `error_domain`, `error_code`, `latency_ms`
   - notes: the one-step call failed and the batch fell back to transcribe + generate; `analysis_batch_completed` carries `one_step` (bool)
@@ -290,7 +276,7 @@ This document lists manual events, properties, and code locations. All events re
   - privacy: validation details are redacted and capped at 500 characters; raw model output, stderr, and generated card content are never sent to analytics
   - files: Core/AI/CodexProvider+ActivityCards.swift, Core/AI/CodexProvider+Transcription.swift, Core/AI/ClaudeProvider+ActivityCards.swift, Core/AI/ClaudeProvider+Transcription.swift, System/AnalyticsService.swift
 - llm_api_call
-  - props: `provider: string`, `provider_id?: dayflow|gemini|chatgpt|claude|openai_compatible|local`, `model: string`, `operation: string`, `attempt: int`, `latency_ms: int`, `outcome: success|error`, `error_domain?: string`, `error_code?: int`, `error_message?: string`, `stdout_was_present?: bool`, `stdout_length?: int`, `stdout_json_removed?: bool`, `stdout_non_json_length?: int`, `stdout_non_json_detail?: string`, `stderr_was_present?: bool`, `stderr_length?: int`, `stderr_json_removed?: bool`, `stderr_non_json_length?: int`, `stderr_non_json_detail?: string`, `http_status?: int`, `has_response_body?: bool`, `response_body_bytes?: int`
+  - props: `provider: string`, `provider_id?: gemini|chatgpt|claude|openai_compatible|local`, `model: string`, `operation: string`, `attempt: int`, `latency_ms: int`, `outcome: success|error`, `error_domain?: string`, `error_code?: int`, `error_message?: string`, `stdout_was_present?: bool`, `stdout_length?: int`, `stdout_json_removed?: bool`, `stdout_non_json_length?: int`, `stdout_non_json_detail?: string`, `stderr_was_present?: bool`, `stderr_length?: int`, `stderr_json_removed?: bool`, `stderr_non_json_length?: int`, `stderr_non_json_detail?: string`, `http_status?: int`, `has_response_body?: bool`, `response_body_bytes?: int`
   - privacy: error messages and non-JSON failure stdout/stderr are redacted and capped at 500 characters; braced/bracketed blocks and fenced JSON are removed first, successful output is never emitted, and request/response bodies stay local
   - file: Core/AI/LLMLogger.swift
 

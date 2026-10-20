@@ -5,7 +5,6 @@ enum DayflowBackendConfiguration {
   static let debugOverrideDefaultsKey = "dayflowBackendURLOverride"
 
   static func endpoint(
-    legacySavedEndpoint: String? = nil,
     bundle: Bundle = .main,
     defaults: UserDefaults = .standard
   ) -> String? {
@@ -15,11 +14,7 @@ enum DayflowBackendConfiguration {
       }
     #endif
 
-    if let infoEndpoint = normalized(bundle.infoDictionary?[infoPlistEndpointKey] as? String) {
-      return infoEndpoint
-    }
-
-    return normalized(legacySavedEndpoint)
+    return normalized(bundle.infoDictionary?[infoPlistEndpointKey] as? String)
   }
 
   private static func normalized(_ rawValue: String?) -> String? {

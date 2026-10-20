@@ -19,7 +19,7 @@ final class KeychainManager {
   /// Stores an API key in the keychain
   /// - Parameters:
   ///   - apiKey: The API key to store
-  ///   - provider: The provider identifier (e.g., "gemini", "dayflow")
+  ///   - provider: The provider identifier (e.g., "gemini")
   /// - Returns: true if successful, false otherwise
   @discardableResult
   func store(_ apiKey: String, for provider: String) -> Bool {
