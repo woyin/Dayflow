@@ -25,13 +25,12 @@ struct OnboardingFlow: View {
 
   private var onboardingFilledSegments: Int {
     switch step {
-    case .roleSelection: return 0
-    case .referral: return 1
-    case .llmSelection: return 2
-    case .llmSetup: return 3
-    case .screen: return 4
-    case .personalGoal: return 5
-    case .completion: return 6
+    case .referral: return 0
+    case .llmSelection: return 1
+    case .llmSetup: return 2
+    case .screen: return 3
+    case .personalGoal: return 4
+    case .completion: return 5
     }
   }
 
@@ -44,22 +43,6 @@ struct OnboardingFlow: View {
     ZStack(alignment: .bottomLeading) {
       // NO NESTING! Just render the appropriate view directly - NO GROUP!
       switch step {
-      case .roleSelection:
-        OnboardingPrototypeRoleSelectionStep(
-          onContinue: { selectedRole in
-            categoryStore.setOnboardingRole(selectedRole)
-            // Onboarding no longer has a category step, so apply the role's preset here.
-            categoryStore.applyOnboardingPresetIfNeeded()
-            AnalyticsService.shared.capture("onboarding_role_selected", ["role": selectedRole])
-            advance(selectedRole: selectedRole)
-          }
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .transition(.opacity)
-        .onAppear {
-          AnalyticsService.shared.screen("onboarding_role_selection")
-        }
-
       case .referral:
         OnboardingPrototypeReferralStep(
           onContinue: { option, detail in
@@ -272,13 +255,8 @@ struct OnboardingFlow: View {
     AnalyticsService.shared.capture("onboarding_step_completed", props)
   }
 
-  private func advance(selectedRole: String? = nil, extraProps: [String: Any] = [:]) {
+  private func advance(extraProps: [String: Any] = [:]) {
     switch step {
-    case .roleSelection:
-      let extraProps = selectedRole.map { ["role": $0] } ?? [:]
-      markStepCompleted(step, extraProps: extraProps)
-      step.next()
-      savedStepRawValue = step.rawValue
     case .referral:
       markStepCompleted(step, extraProps: extraProps)
       step.next()
@@ -315,12 +293,10 @@ struct OnboardingFlow: View {
 
 /// Wizard step order
 enum OnboardingStep: Int, CaseIterable {
-  case roleSelection, referral, llmSelection, llmSetup, screen, personalGoal, completion
+  case referral, llmSelection, llmSetup, screen, personalGoal, completion
 
   var analyticsName: String {
     switch self {
-    case .roleSelection:
-      return "role_selection"
     case .referral:
       return "referral"
     case .llmSelection:
@@ -347,7 +323,7 @@ enum OnboardingStep: Int, CaseIterable {
 enum OnboardingStepMigration {
   static let schemaVersionKey = "onboardingStepSchemaVersion"
   private static let onboardingStepKey = "onboardingStep"
-  static let currentVersion = 7
+  static let currentVersion = 8
 
   @discardableResult
   static func migrateIfNeeded(defaults: UserDefaults = .standard) -> Int {
@@ -406,13 +382,20 @@ enum OnboardingStepMigration {
       migratedValue = migrateV6toV7(migratedValue)
     }
 
+    // v7 → v8: remove the role-selection screen
+    // Old v7: roleSelection=0, referral=1, llmSelection=2, llmSetup=3, screen=4, personalGoal=5, completion=6
+    // New v8: referral=0, llmSelection=1, llmSetup=2, screen=3, personalGoal=4, completion=5
+    if storedVersion < 8 {
+      migratedValue = migrateV7toV8(migratedValue)
+    }
+
     defaults.set(migratedValue, forKey: onboardingStepKey)
     defaults.set(currentVersion, forKey: schemaVersionKey)
     return migratedValue
   }
 
   static func restoredStep(defaults: UserDefaults = .standard) -> OnboardingStep {
-    OnboardingStep(rawValue: migrateIfNeeded(defaults: defaults)) ?? .roleSelection
+    OnboardingStep(rawValue: migrateIfNeeded(defaults: defaults)) ?? .referral
   }
 
   static func migrateV0toV1(_ rawValue: Int) -> Int {
@@ -492,11 +475,20 @@ enum OnboardingStepMigration {
     }
   }
 
+  static func migrateV7toV8(_ rawValue: Int) -> Int {
+    switch rawValue {
+    case 0: return 0  // roleSelection → referral
+    case 1...6: return rawValue - 1  // every later step shifts back one
+    default: return 0
+    }
+  }
+
   // Keep for testing compatibility
   static func migrateRawValue(_ rawValue: Int) -> Int {
-    migrateV6toV7(
-      migrateV5toV6(
-        migrateV4toV5(migrateV3toV4(migrateV2toV3(migrateV1toV2(migrateV0toV1(rawValue)))))))
+    migrateV7toV8(
+      migrateV6toV7(
+        migrateV5toV6(
+          migrateV4toV5(migrateV3toV4(migrateV2toV3(migrateV1toV2(migrateV0toV1(rawValue))))))))
   }
 }
 

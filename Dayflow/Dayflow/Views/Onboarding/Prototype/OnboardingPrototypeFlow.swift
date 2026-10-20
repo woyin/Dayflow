@@ -6,7 +6,6 @@
 import SwiftUI
 
 enum OnboardingPrototypeStep: Int, CaseIterable, Identifiable {
-  case roleSelection
   case preferences
   case chooseProvider
   case placeholder
@@ -15,8 +14,6 @@ enum OnboardingPrototypeStep: Int, CaseIterable, Identifiable {
 
   var analyticsName: String {
     switch self {
-    case .roleSelection:
-      return "role_selection"
     case .preferences:
       return "preferences"
     case .chooseProvider:
@@ -45,7 +42,7 @@ struct OnboardingPrototypeFlow: View {
   @State private var hasTrackedCompletion = false
 
   init(
-    initialStep: OnboardingPrototypeStep = .roleSelection,
+    initialStep: OnboardingPrototypeStep = .preferences,
     flowVariant: String = "prototype_v1",
     entryPoint: String = "preview"
   ) {
@@ -60,22 +57,6 @@ struct OnboardingPrototypeFlow: View {
         .ignoresSafeArea()
 
       switch currentStep {
-      case .roleSelection:
-        OnboardingPrototypeRoleSelectionStep(
-          onContinue: { selectedRole in
-            OnboardingPrototypeAnalytics.trackStepCompleted(
-              step: .roleSelection,
-              flowID: flowID,
-              flowVariant: flowVariant,
-              advanceMethod: "continue_button",
-              extraProps: ["selected_role": selectedRole]
-            )
-            if let nextStep = OnboardingPrototypeStep.roleSelection.next {
-              currentStep = nextStep
-            }
-          }
-        )
-
       case .preferences:
         OnboardingPrototypePreferencesStep(
           onContinue: { hasPaidAI in
@@ -182,7 +163,7 @@ private struct OnboardingPrototypePlaceholderStep: View {
           .foregroundColor(.black.opacity(0.9))
 
         Text(
-          "The role-selection screen and preferences screen are now wired up. We can keep replacing the remaining placeholders step by step without touching production onboarding yet."
+          "The preferences screen is now wired up. We can keep replacing the remaining placeholders step by step without touching production onboarding yet."
         )
         .font(.custom("Figtree", size: 17))
         .foregroundColor(.black.opacity(0.65))
@@ -304,11 +285,6 @@ enum OnboardingPrototypeAnalytics {
     .frame(
       width: 900, height: 600
     )
-}
-
-#Preview("Onboarding Prototype Role Selection") {
-  OnboardingPrototypeFlow(initialStep: .roleSelection)
-    .frame(width: 1200, height: 800)
 }
 
 #Preview("Onboarding Prototype Preferences") {

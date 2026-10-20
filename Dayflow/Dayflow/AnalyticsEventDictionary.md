@@ -33,7 +33,7 @@ This document lists manual events, properties, and code locations. All events re
 - onboarding_started
   - file: Views/Onboarding/OnboardingFlow.swift (first onboarding step)
 - onboarding_step_completed
-  - props: `step: role_selection|referral|llm_selection|llm_setup|screen_recording|personal_goal|completion` (download_reason, preferences, categories and category_colors were removed in schema v6; the intro video was removed in v7)
+  - props: `step: referral|llm_selection|llm_setup|screen_recording|personal_goal|completion` (download_reason, preferences, categories and category_colors were removed in schema v6; the intro video in v7; role selection in v8)
   - file: Views/Onboarding/OnboardingFlow.swift
 - onboarding_download_reason (retired in onboarding schema v6; historical data only)
   - props: `reasons: string[] (automatic_log|proof_of_work|cut_distractions|productive_focused|automated_manual_tracking|open_source_private|other)`, `surface: onboarding_download_reason`, `other_detail?: string`
