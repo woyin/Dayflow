@@ -43,3 +43,34 @@ jobs:
         with:
           name: test-results
           path: TestResults.xcresult
+
+  build-app:
+    name: Build app artifact
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project Dayflow/Dayflow.xcodeproj \
+            -scheme Dayflow \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath DerivedData \
+            -clonedSourcePackagesDirPath .spm \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet
+      - name: Zip app
+        run: |
+          APP=$(find DerivedData/Build/Products/Debug -maxdepth 1 -name '*.app' | head -1)
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" Dayflow.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dayflow-app
+          path: Dayflow.zip
