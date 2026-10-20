@@ -28,11 +28,17 @@ jobs:
           xcode-version: latest-stable
       - name: Build and test
         run: |
-          set -o pipefail
           xcodebuild test \
             -project Dayflow/Dayflow.xcodeproj \
             -scheme Dayflow \
             -destination 'platform=macOS' \
             -clonedSourcePackagesDirPath .spm \
-            CODE_SIGNING_ALLOWED=NO \
-            | tail -n 200
+            -resultBundlePath TestResults.xcresult \
+            -quiet \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults.xcresult
